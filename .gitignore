@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment variables (chứa password DB, JWT secret — TUYỆT ĐỐI không commit)
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Prisma
+# (Prisma generate ra client trong node_modules nên không cần ignore riêng,
+# nhưng nếu bạn có thư mục migrations tạm thời để test thì tuỳ chọn ignore)
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
