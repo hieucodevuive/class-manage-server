@@ -11,3 +11,17 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum Role {
+  TEACHER
+  ADMIN
+}
+
+model User {
+  id           Int    @id @default(autoincrement())
+  email        String @unique
+  passwordHash String
+  role Role
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
