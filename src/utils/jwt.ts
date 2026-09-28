@@ -14,8 +14,26 @@ export function createAccessToken(user: { id: number; role: Role }) {
   );
 }
 
-export function verifyAccessToken(token: string) {
-  return jwt.verify(token, env.JWT_SECRET, {
+export function verifyAccessToken(
+  token: string,
+): { userId: number; role: Role } {
+  const payload = jwt.verify(token, env.JWT_SECRET, {
     algorithms: ['HS256'],
   });
+
+  if (
+    typeof payload === 'string' ||
+    typeof payload.sub !== 'string' ||
+    (payload.role !== 'TEACHER' && payload.role !== 'ADMIN')
+  ) {
+    throw new Error('Dữ liệu token không hợp lệ');
+  }
+
+  const userId = Number(payload.sub);
+
+  if (!Number.isSafeInteger(userId) || userId <= 0) {
+    throw new Error('User ID trong token không hợp lệ');
+  }
+
+  return { userId, role: payload.role };
 }
