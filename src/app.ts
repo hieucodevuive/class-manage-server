@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import { env } from './config/env';
 
 import authRouter from './modules/auth/auth.route';
+import classRouter from './modules/classes/class.route';
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use(cors({
 }));
 
 app.use('/api/auth', authRouter);
+app.use('/api/classes', classRouter);
 
 app.use((req, res) => {
   res.status(404).json({

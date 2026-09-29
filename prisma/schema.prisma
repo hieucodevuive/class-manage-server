@@ -36,3 +36,24 @@ model RefreshToken {
   userId Int
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+enum ClassStatus {
+  ACTIVE
+  INACTIVE
+  COMPLETED
+}
+
+model Class {
+  id         Int         @id @default(autoincrement())
+  name       String      @db.VarChar(100)
+  grade      Int         @db.SmallInt
+  schoolYear String      @db.VarChar(20)
+  subject    String      @db.VarChar(100)
+  tuitionFee Decimal     @db.Decimal(12, 2)
+  startDate  DateTime    @db.Date
+  endDate    DateTime?   @db.Date
+  status     ClassStatus @default(ACTIVE)
+  note       String?     @db.Text
+  createdAt  DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime    @updatedAt @db.Timestamptz(3)
+}
