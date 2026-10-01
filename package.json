@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "test:classes": "tsx --test tests/classes.integration.test.ts",
+    "test:auth": "tsx --test tests/auth.approval-gate.integration.test.ts tests/auth.registration.integration.test.ts tests/auth.approval-flow.integration.test.ts",
+    "test:students": "tsx --test tests/students.create.integration.test.ts tests/students.list.integration.test.ts tests/students.detail.integration.test.ts tests/students.update-delete.integration.test.ts",
+    "seed:admin": "tsx prisma/seed-admin.ts",
     "postinstall": "prisma skills sync || exit 0"
   },
   "keywords": [],

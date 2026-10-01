@@ -17,11 +17,17 @@ enum Role {
   ADMIN
 }
 
+enum AccountStatus {
+  PENDING
+  ACTIVE
+}
+
 model User {
   id           Int    @id @default(autoincrement())
   email        String @unique
   passwordHash String
   role Role
+  status AccountStatus @default(PENDING)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   refreshTokens RefreshToken[]

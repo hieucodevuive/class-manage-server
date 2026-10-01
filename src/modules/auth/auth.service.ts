@@ -1,12 +1,51 @@
 import bcrypt from 'bcryptjs';
-import { deleteRefreshTokenByHash, findRefreshTokenByHash, findUserByEmail, findUserById, rotateRefreshToken, saveRefreshToken } from './auth.repository';
+import { Prisma } from '../../generated/prisma/client';
+import type { RegisterInput } from './auth.schema';
+import { activatePendingTeacher, deleteRefreshTokenByHash, findPendingRegistrations, findRefreshTokenByHash, findRegistrationState, findUserByEmail, findUserByEmailIgnoreCase, findUserById, findUserStatusById, insertPendingTeacher, rotateRefreshToken, saveRefreshToken } from './auth.repository';
 import {
   createRefreshToken,
   hashRefreshToken,
 } from '../../utils/refresh-token';
 
+export async function registerTeacher(data: RegisterInput) {
+  if (await findUserByEmailIgnoreCase(data.email)) {
+    return { status: 'email_exists' } as const;
+  }
+
+  const passwordHash = await bcrypt.hash(data.password, 12);
+
+  try {
+    const user = await insertPendingTeacher(data.email, passwordHash);
+    return { status: 'created', user } as const;
+  } catch (error) {
+    // Unique constraint vẫn bảo vệ email nếu hai request đăng ký chạy cùng lúc.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return { status: 'email_exists' } as const;
+    }
+    throw error;
+  }
+}
+
+export function listPendingRegistrations() {
+  return findPendingRegistrations();
+}
+
+export async function approveRegistration(id: number) {
+  const user = await activatePendingTeacher(id);
+  if (user) {
+    return { status: 'approved', user } as const;
+  }
+
+  const current = await findRegistrationState(id);
+  return current?.role === 'TEACHER' && current.status === 'ACTIVE'
+    ? { status: 'already_active' } as const
+    : { status: 'not_found' } as const;
+}
+
 export async function authenticateUser(email: string, password: string) {
-  const user = await findUserByEmail(email);
+  // Tài khoản cũ vẫn tra đúng email đã lưu; email đăng ký mới được chuẩn hóa chữ thường.
+  const user = await findUserByEmail(email)
+    ?? (email.toLowerCase() === email ? null : await findUserByEmail(email.toLowerCase()));
 
   if (!user) {
     return null;
@@ -19,14 +58,22 @@ export async function authenticateUser(email: string, password: string) {
   }
 
   return {
-    id: user.id,
-    email: user.email,
-    role: user.role,
-    };
+    status: user.status,
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    },
+  };
 }
 
 export function getCurrentUser(userId: number) {
   return findUserById(userId);
+}
+
+export async function getAccountStatus(userId: number) {
+  const user = await findUserStatusById(userId);
+  return user?.status ?? null;
 }
 
 export async function issueRefreshToken(userId: number) {
@@ -56,7 +103,7 @@ export async function validateRefreshToken(refreshToken: string) {
 export async function refreshSession(refreshToken: string) {
   const record = await validateRefreshToken(refreshToken);
 
-  if (!record) {
+  if (!record || record.user.status !== 'ACTIVE') {
     return null;
   }
 
@@ -75,7 +122,11 @@ export async function refreshSession(refreshToken: string) {
   }
 
   return {
-    user: record.user,
+    user: {
+      id: record.user.id,
+      email: record.user.email,
+      role: record.user.role,
+    },
     refreshToken: newRefreshToken,
     expiresAt,
   };

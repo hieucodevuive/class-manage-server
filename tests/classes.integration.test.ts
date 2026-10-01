@@ -17,7 +17,10 @@ test('Class CRUD theo model đầy đủ', { timeout: 30000 }, async () => {
   const prefix = `class-test-${randomUUID()}`;
 
   try {
-    const user = await prisma.user.findFirst({ select: { id: true, role: true } });
+    const user = await prisma.user.findFirst({
+      where: { status: 'ACTIVE' },
+      select: { id: true, role: true },
+    });
     assert.ok(user, 'Cần có tài khoản đã seed');
     const initialIds = new Set((await prisma.class.findMany({ select: { id: true } })).map(row => row.id));
     const teacherToken = createAccessToken({ id: user.id, role: 'TEACHER' });
@@ -263,6 +266,7 @@ test('Class CRUD theo model đầy đủ', { timeout: 30000 }, async () => {
         email: `${prefix}@example.test`,
         passwordHash: 'test-fixture-no-login',
         role: 'TEACHER',
+        status: 'ACTIVE',
       },
     });
     otherUserId = otherUser.id;

@@ -89,5 +89,38 @@ và hỏi trước khi thay đổi có ảnh hưởng lớn.
 - Các trường nullable, enum ACTIVE/INACTIVE, DATE/TIMESTAMPTZ và CHECK grade
   1–12 đã được kiểm tra trong PostgreSQL. `status` bắt buộc, chưa đặt default;
   API tạo Student sẽ quyết định cách nhập hoặc mặc định giá trị này.
-- Prisma Client đã generate; chưa tạo route/controller/service/repository hoặc
-  API Student. Chỉ chuyển sang POST Student khi người dùng yêu cầu bước tiếp.
+- Prisma Client đã generate. `POST /api/students` đã triển khai với Zod và
+  route → controller → service → repository; `teacher_id` lấy từ
+  `res.locals.auth.userId`, status mặc định ACTIVE ở API. Đã test HTTP với hai
+  tài khoản bằng `npm run test:students`. `GET /api/students` lọc `teacherId`
+  trong Prisma theo ID đã xác thực, trả hồ sơ mới nhất trước.
+  `GET /api/students/:id` kiểm tra UUID và tìm theo cả ID lẫn `teacherId`, trả 404
+  nếu không có quyền. Người dùng đã yêu cầu làm PATCH và DELETE cùng một lượt.
+  Cả hai truy vấn đều kiểm tra ID lẫn `teacherId`; PATCH không sửa quyền sở hữu,
+  DELETE hiện xóa hẳn vì chưa có Enrollment/Payment. Khi bổ sung lịch sử ghi danh,
+  phải chặn xóa hồ sơ đã được sử dụng.
+
+## Chuẩn bị đăng ký và duyệt tài khoản (2026-10-01)
+
+- Người dùng muốn giáo viên tự đăng ký nhưng chỉ được dùng hệ thống sau khi duyệt.
+  `User` trước đây chỉ có `role` TEACHER/ADMIN.
+- Database hiện có một tài khoản TEACHER và chưa có ADMIN. Người dùng đã chọn
+  tạo ADMIN riêng; chỉ ADMIN được duyệt. Không tự nâng quyền tài khoản TEACHER.
+- Đã chuẩn bị `AccountStatus` PENDING/ACTIVE trên User. Migration giữ tài khoản
+  hiện có ACTIVE, đặt PENDING làm mặc định cho tài khoản mới. Seed giáo viên
+  hiện có gán ACTIVE rõ ràng. `prisma/seed-admin.ts` tạo ADMIN riêng từ biến môi
+  trường, không chạy tự động.
+- Đã bổ sung chặn PENDING tại login, refresh và `requireAuth`; chỉ ACTIVE được
+  cấp hoặc dùng token. Test Class/Student fixture đã ghi ACTIVE rõ ràng; test
+  auth riêng ở `tests/auth.approval-gate.integration.test.ts`. Response user của
+  login/refresh/me vẫn chỉ gồm id, email, role.
+- `POST /api/auth/register` đã mở đăng ký công khai, nhận email và mật khẩu,
+  chỉ tạo TEACHER/PENDING, không cấp token. Email trùng trả 409; client không
+  được chọn role/status. Test ở `tests/auth.registration.integration.test.ts`.
+- Theo yêu cầu làm trọn luồng duyệt trong một lượt, đã thêm
+  `GET /api/auth/registrations/pending` và
+  `PATCH /api/auth/registrations/:id/approve`, chỉ ADMIN ACTIVE được gọi.
+  Truy vấn duyệt có điều kiện `TEACHER/PENDING` để tránh duyệt trùng khi đồng
+  thời. Test HTTP ở `tests/auth.approval-flow.integration.test.ts`; cách sử dụng
+  ở `docs/auth-approval.md`. Chưa chạy seed ADMIN thật vì chủ hệ thống tự chọn
+  email/mật khẩu.

@@ -1,8 +1,77 @@
 import type { RequestHandler } from 'express';
-import { loginSchema } from './auth.schema';
-import { authenticateUser, getCurrentUser, issueRefreshToken, logoutSession, refreshSession } from './auth.service';
+import { loginSchema, registerSchema, registrationIdSchema } from './auth.schema';
+import { approveRegistration, authenticateUser, getCurrentUser, issueRefreshToken, listPendingRegistrations, logoutSession, refreshSession, registerTeacher } from './auth.service';
 import { createAccessToken, verifyAccessToken  } from '../../utils/jwt';
 import { env } from '../../config/env';
+
+export const registerController: RequestHandler = async (req, res) => {
+  const result = registerSchema.safeParse(req.body);
+
+  if (!result.success) {
+    res.status(400).json({
+      success: false,
+      message: 'Thông tin đăng ký không hợp lệ',
+      errors: result.error.issues.map(issue => ({
+        field: issue.path.join('.') || 'body',
+        message: issue.message,
+      })),
+    });
+    return;
+  }
+
+  const registration = await registerTeacher(result.data);
+  if (registration.status === 'email_exists') {
+    res.status(409).json({
+      success: false,
+      message: 'Email đã được sử dụng',
+    });
+    return;
+  }
+
+  res.status(201).json({
+    success: true,
+    message: 'Đăng ký thành công, tài khoản đang chờ duyệt',
+    data: { user: registration.user },
+  });
+};
+
+export const listPendingRegistrationsController: RequestHandler = async (_req, res) => {
+  const users = await listPendingRegistrations();
+  res.json({ success: true, data: { users } });
+};
+
+export const approveRegistrationController: RequestHandler = async (req, res) => {
+  const idResult = registrationIdSchema.safeParse(req.params.id);
+  if (!idResult.success) {
+    res.status(400).json({
+      success: false,
+      message: 'ID tài khoản phải là số nguyên dương không vượt quá 2147483647',
+    });
+    return;
+  }
+
+  const result = await approveRegistration(idResult.data);
+  if (result.status === 'not_found') {
+    res.status(404).json({
+      success: false,
+      message: 'Không tìm thấy tài khoản giáo viên chờ duyệt',
+    });
+    return;
+  }
+  if (result.status === 'already_active') {
+    res.status(409).json({
+      success: false,
+      message: 'Tài khoản đã được duyệt',
+    });
+    return;
+  }
+
+  res.json({
+    success: true,
+    message: 'Đã duyệt tài khoản',
+    data: { user: result.user },
+  });
+};
 
 export const loginController: RequestHandler = async (req, res) => {
   const result = loginSchema.safeParse(req.body);
@@ -15,15 +84,25 @@ export const loginController: RequestHandler = async (req, res) => {
     return;
   }
 
-  const user = await authenticateUser(result.data.email, result.data.password);
+  const account = await authenticateUser(result.data.email, result.data.password);
 
-  if (!user) {
+  if (!account) {
     res.status(401).json({
       success: false,
       message: 'Email hoặc mật khẩu không đúng',
     });
     return;
   }
+
+  if (account.status !== 'ACTIVE') {
+    res.status(403).json({
+      success: false,
+      message: 'Tài khoản đang chờ duyệt',
+    });
+    return;
+  }
+
+  const { user } = account;
 
   const accessToken = createAccessToken(user);
 

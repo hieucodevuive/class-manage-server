@@ -94,3 +94,27 @@ Business routes tiếp tục dùng middleware auth/role hiện có. Vai trò `AD
 - `Class.id` hiện là `Int` tự tăng; `User.id` cũng là `Int`. Khóa ngoại trỏ đến Class/User phải tương thích. Chưa suy rộng quyết định ID Class sang ID Student hoặc các bảng mới.
 - Tài liệu cũ mô tả khả năng học sinh rời lớp rồi ghi danh lại bằng enrollment mới và gợi ý unique index chỉ cho trạng thái ACTIVE. Yêu cầu mới `UNIQUE(class_id, student_id)` không cho phép hai bản ghi cho cùng một cặp. Cần xác nhận nghiệp vụ ghi danh lại trước bước Enrollment.
 - Khi thêm `teacher_id NOT NULL` cho Class, phải kiểm tra dữ liệu Class đã tồn tại và thống nhất cách gán chủ sở hữu trước migration; không tự backfill.
+
+## 8. Đăng ký và duyệt tài khoản (quyết định 2026-10-01)
+
+- Giáo viên có thể tự đăng ký, nhưng tài khoản mới ở trạng thái `PENDING` và
+  chưa được đăng nhập hoặc dùng API nghiệp vụ trước khi được duyệt.
+- `User.status` có hai giá trị ban đầu: `PENDING`, `ACTIVE`. Các tài khoản đã có
+  trước migration giữ `ACTIVE` để không mất quyền đăng nhập. Tài khoản mới mặc
+  định `PENDING`.
+- Chỉ tài khoản `ADMIN` riêng được duyệt. Đăng ký công khai luôn tạo role
+  `TEACHER`; client không được chọn `ADMIN`, `status` hoặc nhận token khi đăng ký.
+- Database hiện chưa có ADMIN. Tạo tài khoản ADMIN bằng lệnh nội bộ với email và
+  mật khẩu do chủ hệ thống cung cấp qua biến môi trường; không mở đăng ký ADMIN
+  công khai và không tự nâng quyền tài khoản TEACHER hiện có. Sau migration, đặt
+  `SEED_ADMIN_EMAIL` và `SEED_ADMIN_PASSWORD` (ít nhất 12 ký tự) trong môi trường
+  riêng rồi chạy `npm run seed:admin`; lệnh không in mật khẩu.
+- Đã thêm điều kiện trạng thái ở login/refresh/middleware và API công khai
+  `POST /api/auth/register` chỉ tạo TEACHER/PENDING, không cấp token. ADMIN có
+  `GET /api/auth/registrations/pending` để xem yêu cầu và
+  `PATCH /api/auth/registrations/:id/approve` để kích hoạt giáo viên. Chi tiết
+  request/response và cách tự kiểm tra ở `docs/auth-approval.md`.
+- Login chỉ cấp token cho `ACTIVE` sau khi mật khẩu đúng. Refresh chỉ cấp token mới
+  cho `ACTIVE`; middleware kiểm tra trạng thái hiện tại của tài khoản trước khi
+  cho dùng access token ở các API có xác thực. Response user giữ `id`, `email`,
+  `role`, không lộ `passwordHash` hoặc `status`.

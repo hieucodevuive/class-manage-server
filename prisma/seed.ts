@@ -31,6 +31,7 @@ async function main() {
       email,
       passwordHash,
       role: 'TEACHER',
+      status: 'ACTIVE',
     },
   });
 
