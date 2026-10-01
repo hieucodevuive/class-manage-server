@@ -12,6 +12,7 @@ import { createAccessToken } from '../src/utils/jwt';
 // Cần .env và migration đã apply. Chỉ tạo/xóa các bản ghi riêng của lượt test này.
 test('Class CRUD theo model đầy đủ', { timeout: 30000 }, async () => {
   let server: Server | undefined;
+  let otherUserId: number | undefined;
   const ownedIds = new Set<number>();
   const prefix = `class-test-${randomUUID()}`;
 
@@ -62,7 +63,7 @@ test('Class CRUD theo model đầy đủ', { timeout: 30000 }, async () => {
     };
     const initialList = await request('GET', '', teacherToken);
     assert.equal(initialList.status, 200);
-    assert.equal(initialList.body.data.classes.length, initialIds.size);
+    assert.equal(initialList.body.data.classes.length, await prisma.class.count({ where: { teacherId: user.id } }));
     const created = await request('POST', '', teacherToken, {
       ...valid, name: `  ${valid.name}  `, subject: ' Ngữ Văn ',
       id: -1, createdAt: '2000-01-01T00:00:00Z',
@@ -139,7 +140,10 @@ test('Class CRUD theo model đầy đủ', { timeout: 30000 }, async () => {
       assert.deepEqual(detail.body.data.class, expectedClass(primary));
       const list = await request('GET', '', token);
       assert.equal(list.status, 200);
-      const rows = await prisma.class.findMany({ orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
+      const rows = await prisma.class.findMany({
+        where: { teacherId: user.id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      });
       assert.deepEqual(list.body.data.classes, rows.map(expectedClass));
     }
     console.log('PASS: GET danh sách/chi tiết cho hai role; đủ các trường, đúng thứ tự');
@@ -253,6 +257,64 @@ test('Class CRUD theo model đầy đủ', { timeout: 30000 }, async () => {
     assert.equal(finalList.status, 200);
     assert.ok(!finalList.body.data.classes.some((row: { id: number }) => row.id === adminId || row.id === missingId));
     console.log('PASS: DELETE đồng thời một 200/một 404; danh sách không còn các lớp đã xóa');
+
+    const otherUser = await prisma.user.create({
+      data: {
+        email: `${prefix}@example.test`,
+        passwordHash: 'test-fixture-no-login',
+        role: 'TEACHER',
+      },
+    });
+    otherUserId = otherUser.id;
+    const otherToken = createAccessToken({ id: otherUser.id, role: 'TEACHER' });
+    const otherAdminToken = createAccessToken({ id: otherUser.id, role: 'ADMIN' });
+    const otherCreated = await request('POST', '', otherToken, {
+      ...valid,
+      name: `${prefix}-other`,
+      teacherId: user.id,
+      teacher_id: user.id,
+    });
+    assert.equal(otherCreated.status, 201);
+    const otherId = otherCreated.body.data.class.id;
+    assert.equal((await prisma.class.findUniqueOrThrow({ where: { id } })).teacherId, user.id);
+    assert.equal((await prisma.class.findUniqueOrThrow({ where: { id: otherId } })).teacherId, otherUser.id);
+
+    const ownerList = await request('GET', '', teacherToken);
+    const otherList = await request('GET', '', otherToken);
+    const otherAdminList = await request('GET', '', otherAdminToken);
+    assert.ok(ownerList.body.data.classes.some((row: { id: number }) => row.id === id));
+    assert.ok(!ownerList.body.data.classes.some((row: { id: number }) => row.id === otherId));
+    assert.deepEqual(otherList.body.data.classes.map((row: { id: number }) => row.id), [otherId]);
+    assert.deepEqual(otherAdminList.body.data.classes.map((row: { id: number }) => row.id), [otherId]);
+
+    const ownerBefore = await prisma.class.findUniqueOrThrow({ where: { id } });
+    const otherBefore = await prisma.class.findUniqueOrThrow({ where: { id: otherId } });
+    for (const [token, foreignId] of [
+      [teacherToken, otherId],
+      [otherToken, id],
+      [otherAdminToken, id],
+    ] as const) {
+      assert.equal((await request('GET', `/${foreignId}`, token)).status, 404);
+      assert.equal((await request('PATCH', `/${foreignId}`, token, { note: 'Không được lưu' })).status, 404);
+      assert.equal((await request('DELETE', `/${foreignId}`, token)).status, 404);
+    }
+    assert.deepEqual(await prisma.class.findUniqueOrThrow({ where: { id } }), ownerBefore);
+    assert.deepEqual(await prisma.class.findUniqueOrThrow({ where: { id: otherId } }), otherBefore);
+
+    const ownerPatch = await request('PATCH', `/${id}`, teacherToken, {
+      teacherId: otherUser.id,
+      teacher_id: otherUser.id,
+      note: 'Chủ sở hữu không đổi',
+    });
+    assert.equal(ownerPatch.status, 200);
+    assert.equal((await prisma.class.findUniqueOrThrow({ where: { id } })).teacherId, user.id);
+    assert.equal((await request('PATCH', `/${id}`, teacherToken, { teacherId: otherUser.id })).status, 400);
+    assert.equal((await request('GET', `/${otherId}`, otherToken)).status, 200);
+    assert.equal((await request('PATCH', `/${otherId}`, otherToken, { status: 'INACTIVE' })).status, 200);
+    assert.equal((await prisma.class.findUniqueOrThrow({ where: { id: otherId } })).teacherId, otherUser.id);
+    assert.equal((await request('DELETE', `/${otherId}`, otherToken)).status, 200);
+    assert.equal((await prisma.class.findUniqueOrThrow({ where: { id } })).teacherId, user.id);
+    console.log('PASS: Hai tài khoản tách biệt Class; không giả mạo/chuyển chủ sở hữu qua POST/PATCH/ADMIN');
   } finally {
     try {
       if (ownedIds.size) {
@@ -261,13 +323,19 @@ test('Class CRUD theo model đầy đủ', { timeout: 30000 }, async () => {
       }
     } finally {
       try {
-        if (server) {
-          await new Promise<void>((resolve, reject) => {
-            server!.close(error => error ? reject(error) : resolve());
-          });
+        if (otherUserId !== undefined) {
+          await prisma.user.delete({ where: { id: otherUserId } });
         }
       } finally {
-        await prisma.$disconnect();
+        try {
+          if (server) {
+            await new Promise<void>((resolve, reject) => {
+              server!.close(error => error ? reject(error) : resolve());
+            });
+          }
+        } finally {
+          await prisma.$disconnect();
+        }
       }
     }
   }

@@ -1,5 +1,9 @@
 # Hướng dẫn làm việc — Class Management Backend
 
+Đọc `docs/system-design.md` để nắm thiết kế nhiều giáo viên mới nhất. Thiết kế
+này thay thế giả định một giáo viên/không cần `teacher_id` trong tài liệu cũ;
+giữ các quyết định đã duyệt về Class ID và kiến trúc hiện tại.
+
 Trước khi bắt đầu một bước database/API, đọc toàn bộ
 `docs/backend-implementation-instructions.md`. Đây là bản hướng dẫn do người dùng
 cung cấp cho thiết kế và trình tự triển khai mới. Áp dụng cùng yêu cầu hiện tại
@@ -70,5 +74,20 @@ và hỏi trước khi thay đổi có ảnh hưởng lớn.
   tắc bảo vệ lịch sử trước khi cho phép xóa lớp có các quan hệ này.
 - Bộ test được giữ tại `tests/classes.integration.test.ts`; chạy
   `npm run test:classes`. Chỉ tạo/xóa fixture của lượt test, không reset DB.
-- Class CRUD đã xong; bước kế tiếp chỉ sau khi người dùng đồng ý là thiết kế
-  model Student. Không tự triển khai Student hay các phase còn lại.
+- Class CRUD theo thiết kế cũ đã xong. Thiết kế nhiều giáo viên ngày 2026-10-01
+  đã bổ sung quyền sở hữu Class: `teacher_id` bắt buộc, FK/index đến User,
+  migration `20261001134818_add_class_teacher_ownership` đã áp dụng.
+  Cả 5 endpoint Class dùng `res.locals.auth.userId` để giới hạn dữ liệu;
+  `npm run test:classes` đã kiểm tra bằng hai tài khoản. Bước tiếp theo do
+  người dùng chỉ định. Không tự triển khai Student hay các phase còn lại.
+
+## Tiến độ Student (2026-10-01)
+
+- Đã thêm model Student và áp dụng migration `20261001140921_create_student_model`.
+  ID Student là UUID theo tài liệu gốc; `teacher_id` là Int, FK/index đến User.
+  Bảng vật lý theo convention Prisma hiện tại là `"Student"`.
+- Các trường nullable, enum ACTIVE/INACTIVE, DATE/TIMESTAMPTZ và CHECK grade
+  1–12 đã được kiểm tra trong PostgreSQL. `status` bắt buộc, chưa đặt default;
+  API tạo Student sẽ quyết định cách nhập hoặc mặc định giá trị này.
+- Prisma Client đã generate; chưa tạo route/controller/service/repository hoặc
+  API Student. Chỉ chuyển sang POST Student khi người dùng yêu cầu bước tiếp.

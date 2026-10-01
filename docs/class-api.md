@@ -1,7 +1,9 @@
 # Class API
 
 Mọi endpoint yêu cầu `Authorization: Bearer <accessToken>` và role `TEACHER` hoặc
-`ADMIN`. ID Class là số nguyên dương tự tăng, không dùng UUID.
+`ADMIN`. Mỗi tài khoản chỉ thao tác trên lớp của chính mình, kể cả role `ADMIN`.
+Backend lấy `userId` từ access token đã xác thực để xác định chủ sở hữu. ID Class
+là số nguyên dương tự tăng, không dùng UUID.
 
 ## POST /api/classes
 
@@ -27,8 +29,9 @@ Body tối thiểu:
 - `endDate`: có thể bỏ qua hoặc null; nếu có phải không trước startDate.
 - `status`: `ACTIVE`, `INACTIVE`, `COMPLETED`; bỏ qua khi tạo thì mặc định ACTIVE.
 - `note`: chuỗi (trim), có thể bỏ qua hoặc null.
-- Không nhận id, createdAt, updatedAt, studentCount từ client; field không thuộc
-  schema bị loại bỏ.
+- Không nhận id, teacherId/teacher_id, createdAt, updatedAt, studentCount từ
+  client; field không thuộc schema bị loại bỏ. `teacher_id` trong database được
+  backend tự gán theo tài khoản đã đăng nhập.
 
 Thành công: 201, `{ "success": true, "message": "Tạo lớp thành công", "data": { "class": ... } }`.
 
@@ -36,12 +39,13 @@ Thành công: 201, `{ "success": true, "message": "Tạo lớp thành công", "d
 
 Thành công: 200, `{ "success": true, "data": { "classes": [...] } }`.
 Không có lớp thì classes là mảng rỗng. Danh sách được sắp xếp theo createdAt giảm
-dần, rồi id giảm dần. Hiện chưa thêm search/filter/pagination.
+dần, rồi id giảm dần. Chỉ trả lớp thuộc tài khoản đăng nhập. Hiện chưa thêm
+search/filter/pagination hoặc total/count.
 
 ## GET /api/classes/:id
 
 Thành công: 200, `{ "success": true, "data": { "class": ... } }`.
-ID sai: 400. ID hợp lệ nhưng không tồn tại: 404.
+ID sai: 400. ID hợp lệ nhưng không tồn tại hoặc thuộc tài khoản khác: 404.
 
 ## PATCH /api/classes/:id
 
@@ -57,12 +61,14 @@ Gửi ít nhất một field hợp lệ trong các field của POST; không cầ
 Field không gửi sẽ giữ nguyên. Không gửi status sẽ không reset về ACTIVE.
 Gửi `endDate: null` hoặc `note: null` để xóa giá trị tương ứng. Các field bắt buộc
 khác không nhận null. Body rỗng hoặc chỉ chứa field không được sửa trả 400.
+Không thể đổi `teacher_id`; truy vấn đọc trước và truy vấn cập nhật đều kiểm tra
+ID lớp cùng chủ sở hữu.
 
 Khi chỉ gửi startDate hoặc endDate, service so sánh với ngày còn lại trong
 database. CHECK constraint cũng bảo vệ thứ tự ngày khi có cập nhật đồng thời.
 
 Thành công: 200, `{ "success": true, "message": "Cập nhật lớp thành công", "data": { "class": ... } }`.
-Sai dữ liệu: 400. Không có lớp: 404.
+Sai dữ liệu: 400. Không có lớp hoặc lớp thuộc tài khoản khác: 404.
 
 ## DELETE /api/classes/:id
 
@@ -72,7 +78,8 @@ Không cần body. Thành công: 200.
 { "success": true, "message": "Xóa lớp thành công" }
 ```
 
-Hiện là hard delete vì chưa có Enrollment/Payment. Xóa lại trả 404.
+Truy vấn xóa kiểm tra đồng thời ID lớp và chủ sở hữu. Xóa lớp của tài khoản khác
+hoặc xóa lại trả 404. Hiện là hard delete vì chưa có Enrollment/Payment.
 Trước khi thêm dữ liệu lịch sử, cần bổ sung quy tắc chặn xóa lớp đã được sử dụng;
 không cascade xóa Enrollment/Payment để làm mất lịch sử tài chính.
 
@@ -99,7 +106,7 @@ POST, GET danh sách, GET chi tiết và PATCH dùng cùng một định dạng:
 
 Học phí luôn là chuỗi Decimal với 2 chữ số phần lẻ. Ngày học là YYYY-MM-DD;
 timestamps là ISO UTC. Chưa trả studentCount/schedules vì các model tương ứng
-chưa được triển khai.
+chưa được triển khai. Response hiện không trả `teacherId`.
 
 ## Lỗi và kiểm tra
 
@@ -109,5 +116,5 @@ lỗi toàn body dùng field `body`. Không có lớp: 404.
 
 Chạy `npx tsc --noEmit` và `npm run test:classes`.
 Test cần .env, database đã migrate và tài khoản đã seed. Test tự mở server ở
-port tạm và chỉ xóa các bản ghi có ID được xác nhận là do lượt test tạo;
-không reset database, không sửa/xóa các lớp có sẵn.
+port tạm, tạo thêm một tài khoản TEACHER để kiểm tra cách ly A/B, rồi chỉ xóa
+fixture của lượt test; không reset database hoặc sửa/xóa lớp có sẵn.

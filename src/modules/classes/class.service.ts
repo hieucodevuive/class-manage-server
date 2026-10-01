@@ -8,8 +8,9 @@ import {
   updateClassById,
 } from './class.repository';
 
-export function createClass(data: CreateClassInput) {
+export function createClass(data: CreateClassInput, teacherId: number) {
   return insertClass({
+    teacher: { connect: { id: teacherId } },
     name: data.name,
     grade: data.grade,
     schoolYear: data.schoolYear,
@@ -22,16 +23,16 @@ export function createClass(data: CreateClassInput) {
   });
 }
 
-export function listClasses() {
-  return findClasses();
+export function listClasses(teacherId: number) {
+  return findClasses(teacherId);
 }
 
-export function getClassById(id: number) {
-  return findClassById(id);
+export function getClassById(id: number, teacherId: number) {
+  return findClassById(id, teacherId);
 }
 
-export async function updateClass(id: number, data: UpdateClassInput) {
-  const existingClass = await findClassById(id);
+export async function updateClass(id: number, teacherId: number, data: UpdateClassInput) {
+  const existingClass = await findClassById(id, teacherId);
 
   if (!existingClass) {
     return { status: 'not_found' } as const;
@@ -49,7 +50,7 @@ export async function updateClass(id: number, data: UpdateClassInput) {
   }
 
   try {
-    const classRecord = await updateClassById(id, {
+    const classRecord = await updateClassById(id, teacherId, {
       ...data,
       tuitionFee: data.tuitionFee === undefined ? undefined : new Prisma.Decimal(data.tuitionFee),
       startDate: data.startDate === undefined ? undefined : startDate,
@@ -78,6 +79,6 @@ export async function updateClass(id: number, data: UpdateClassInput) {
   }
 }
 
-export function deleteClass(id: number) {
-  return deleteClassById(id);
+export function deleteClass(id: number, teacherId: number) {
+  return deleteClassById(id, teacherId);
 }

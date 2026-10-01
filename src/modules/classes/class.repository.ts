@@ -7,8 +7,9 @@ export function insertClass(data: Prisma.ClassCreateInput) {
   });
 }
 
-export function findClasses() {
+export function findClasses(teacherId: number) {
   return prisma.class.findMany({
+    where: { teacherId },
     orderBy: [
       { createdAt: 'desc' },
       { id: 'desc' },
@@ -16,16 +17,16 @@ export function findClasses() {
   });
 }
 
-export function findClassById(id: number) {
-  return prisma.class.findUnique({
-    where: { id },
+export function findClassById(id: number, teacherId: number) {
+  return prisma.class.findFirst({
+    where: { id, teacherId },
   });
 }
 
-export async function updateClassById(id: number, data: Prisma.ClassUpdateInput) {
+export async function updateClassById(id: number, teacherId: number, data: Prisma.ClassUpdateInput) {
   try {
     return await prisma.class.update({
-      where: { id },
+      where: { id, teacherId },
       data,
     });
   } catch (error) {
@@ -37,10 +38,10 @@ export async function updateClassById(id: number, data: Prisma.ClassUpdateInput)
   }
 }
 
-export async function deleteClassById(id: number) {
+export async function deleteClassById(id: number, teacherId: number) {
   try {
     return await prisma.class.delete({
-      where: { id },
+      where: { id, teacherId },
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {

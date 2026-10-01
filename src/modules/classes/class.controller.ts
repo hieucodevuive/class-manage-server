@@ -18,7 +18,7 @@ export const createClassController: RequestHandler = async (req, res) => {
     return;
   }
 
-  const classRecord = await createClass(result.data);
+  const classRecord = await createClass(result.data, res.locals.auth.userId);
 
   res.status(201).json({
     success: true,
@@ -28,7 +28,7 @@ export const createClassController: RequestHandler = async (req, res) => {
 };
 
 export const listClassesController: RequestHandler = async (_req, res) => {
-  const classes = await listClasses();
+  const classes = await listClasses(res.locals.auth.userId);
 
   res.json({
     success: true,
@@ -47,7 +47,7 @@ export const getClassByIdController: RequestHandler = async (req, res) => {
     return;
   }
 
-  const classRecord = await getClassById(result.data);
+  const classRecord = await getClassById(result.data, res.locals.auth.userId);
 
   if (!classRecord) {
     res.status(404).json({
@@ -88,7 +88,7 @@ export const updateClassController: RequestHandler = async (req, res) => {
     return;
   }
 
-  const result = await updateClass(idResult.data, bodyResult.data);
+  const result = await updateClass(idResult.data, res.locals.auth.userId, bodyResult.data);
 
   if (result.status === 'not_found') {
     res.status(404).json({
@@ -128,7 +128,7 @@ export const deleteClassController: RequestHandler = async (req, res) => {
     return;
   }
 
-  const classRecord = await deleteClass(result.data);
+  const classRecord = await deleteClass(result.data, res.locals.auth.userId);
 
   if (!classRecord) {
     res.status(404).json({
