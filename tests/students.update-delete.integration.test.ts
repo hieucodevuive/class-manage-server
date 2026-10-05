@@ -163,3 +163,111 @@ test('PATCH và DELETE /api/students/:id giới hạn theo giáo viên', { timeo
     }
   }
 });
+
+test('DELETE Student giữ lịch sử Enrollment', { timeout: 30000 }, async () => {
+  let server: Server | undefined;
+  const userIds: number[] = [];
+  const studentIds: string[] = [];
+  const classIds: number[] = [];
+  const prefix = `student-delete-test-${randomUUID()}`;
+
+  try {
+    const userA = await prisma.user.create({
+      data: { email: `${prefix}-a@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+    });
+    userIds.push(userA.id);
+    const userB = await prisma.user.create({
+      data: { email: `${prefix}-b@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+    });
+    userIds.push(userB.id);
+    const classA = await prisma.class.create({
+      data: {
+        teacherId: userA.id, name: `${prefix}-class`, grade: 10,
+        schoolYear: '2026-2027', subject: 'Ngữ Văn', tuitionFee: '500000.00',
+        startDate: new Date('2026-09-01T00:00:00.000Z'), status: 'ACTIVE',
+      },
+    });
+    classIds.push(classA.id);
+
+    async function createStudent(teacherId: number, name: string) {
+      const row = await prisma.student.create({
+        data: { teacherId, fullName: name, status: 'ACTIVE' },
+      });
+      studentIds.push(row.id);
+      return row;
+    }
+
+    const enrolledStudentA = await createStudent(userA.id, `${prefix}-enrolled`);
+    const unusedStudentA = await createStudent(userA.id, `${prefix}-unused`);
+    const studentB = await createStudent(userB.id, `${prefix}-other`);
+    const enrollment = await prisma.classStudent.create({
+      data: {
+        classId: classA.id, studentId: enrolledStudentA.id,
+        joinedAt: new Date('2026-09-01T00:00:00.000Z'), status: 'ACTIVE',
+      },
+    });
+
+    const tokenA = createAccessToken({ id: userA.id, role: 'TEACHER' });
+    const tokenB = createAccessToken({ id: userB.id, role: 'TEACHER' });
+    server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    const url = `http://127.0.0.1:${address.port}/api/students`;
+
+    async function deleteRequest(id: string, token?: string) {
+      const response = await fetch(`${url}/${id}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      return { status: response.status, body: await response.json() };
+    }
+
+    const notFound = { status: 404, body: { success: false, message: 'Không tìm thấy học sinh' } };
+    const conflict = { status: 409, body: { success: false, message: 'Không thể xóa học sinh đã có lịch sử ghi danh' } };
+    assert.equal((await deleteRequest(enrolledStudentA.id)).status, 401);
+    assert.equal((await deleteRequest('invalid', tokenA)).status, 400);
+    assert.deepEqual(await deleteRequest(enrolledStudentA.id, tokenB), notFound);
+    assert.deepEqual(await deleteRequest(studentB.id, tokenA), notFound);
+    assert.deepEqual(await deleteRequest(enrolledStudentA.id, tokenA), conflict);
+    assert.ok(await prisma.student.findUnique({ where: { id: enrolledStudentA.id } }));
+    assert.ok(await prisma.classStudent.findUnique({ where: { id: enrollment.id } }));
+
+    await prisma.classStudent.update({
+      where: { id: enrollment.id },
+      data: { status: 'LEFT', leftAt: new Date('2026-10-01T00:00:00.000Z') },
+    });
+    assert.deepEqual(await deleteRequest(enrolledStudentA.id, tokenA), conflict);
+    assert.deepEqual(await deleteRequest(unusedStudentA.id, tokenA), {
+      status: 200, body: { success: true, message: 'Xóa học sinh thành công' },
+    });
+    assert.deepEqual(await deleteRequest(unusedStudentA.id, tokenA), notFound);
+    assert.ok(await prisma.student.findUnique({ where: { id: studentB.id } }));
+    console.log('PASS: DELETE Student trả 409 cho Enrollment ACTIVE/LEFT, 404 nếu khác chủ, 200 khi chưa dùng');
+  } finally {
+    try {
+      if (studentIds.length) {
+        await prisma.classStudent.deleteMany({ where: { studentId: { in: studentIds } } });
+      }
+      if (classIds.length) {
+        await prisma.class.deleteMany({ where: { id: { in: classIds } } });
+      }
+      if (studentIds.length) {
+        await prisma.student.deleteMany({ where: { id: { in: studentIds } } });
+      }
+      if (userIds.length) {
+        await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      }
+    } finally {
+      try {
+        if (server) {
+          await new Promise<void>((resolve, reject) => {
+            server!.close(error => error ? reject(error) : resolve());
+          });
+        }
+      } finally {
+        await prisma.$disconnect();
+      }
+    }
+  }
+});

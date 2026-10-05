@@ -344,3 +344,108 @@ test('Class CRUD theo model đầy đủ', { timeout: 30000 }, async () => {
     }
   }
 });
+
+test('DELETE Class giữ lịch sử Enrollment và quyền sở hữu', { timeout: 30000 }, async () => {
+  let server: Server | undefined;
+  const userIds: number[] = [];
+  const classIds: number[] = [];
+  const prefix = `class-delete-test-${randomUUID()}`;
+
+  try {
+    const userA = await prisma.user.create({
+      data: { email: `${prefix}-a@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+    });
+    userIds.push(userA.id);
+    const userB = await prisma.user.create({
+      data: { email: `${prefix}-b@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+    });
+    userIds.push(userB.id);
+
+    async function createClass(teacherId: number, name: string) {
+      const row = await prisma.class.create({
+        data: {
+          teacherId, name, grade: 10, schoolYear: '2026-2027', subject: 'Ngữ Văn',
+          tuitionFee: '500000.00', startDate: new Date('2026-09-01T00:00:00.000Z'), status: 'ACTIVE',
+        },
+      });
+      classIds.push(row.id);
+      return row;
+    }
+
+    const classA = await createClass(userA.id, `${prefix}-a`);
+    const unusedClassA = await createClass(userA.id, `${prefix}-unused`);
+    const classB = await createClass(userB.id, `${prefix}-b`);
+    const studentA = await prisma.student.create({
+      data: { teacherId: userA.id, fullName: `${prefix}-student-a`, status: 'ACTIVE' },
+    });
+    const studentB = await prisma.student.create({
+      data: { teacherId: userB.id, fullName: `${prefix}-student-b`, status: 'ACTIVE' },
+    });
+    const enrollmentA = await prisma.classStudent.create({
+      data: { classId: classA.id, studentId: studentA.id, joinedAt: new Date('2026-09-01T00:00:00.000Z'), status: 'ACTIVE' },
+    });
+    await prisma.classStudent.create({
+      data: { classId: classB.id, studentId: studentB.id, joinedAt: new Date('2026-09-01T00:00:00.000Z'), status: 'ACTIVE' },
+    });
+
+    const tokenA = createAccessToken({ id: userA.id, role: 'TEACHER' });
+    const tokenB = createAccessToken({ id: userB.id, role: 'TEACHER' });
+    server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    const url = `http://127.0.0.1:${address.port}/api/classes`;
+
+    async function deleteRequest(id: number | string, token?: string) {
+      const response = await fetch(`${url}/${id}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      return { status: response.status, body: await response.json() };
+    }
+
+    const notFound = { status: 404, body: { success: false, message: 'Không tìm thấy lớp' } };
+    const conflict = { status: 409, body: { success: false, message: 'Không thể xóa lớp đã có học sinh ghi danh' } };
+    assert.equal((await deleteRequest(classA.id)).status, 401);
+    assert.equal((await deleteRequest('invalid', tokenA)).status, 400);
+    assert.deepEqual(await deleteRequest(classA.id, tokenB), notFound);
+    assert.deepEqual(await deleteRequest(classB.id, tokenA), notFound);
+    assert.deepEqual(await deleteRequest(classA.id, tokenA), conflict);
+    assert.deepEqual(await deleteRequest(classB.id, tokenB), conflict);
+    assert.ok(await prisma.class.findUnique({ where: { id: classA.id } }));
+    assert.ok(await prisma.classStudent.findUnique({ where: { id: enrollmentA.id } }));
+
+    await prisma.classStudent.update({
+      where: { id: enrollmentA.id },
+      data: { status: 'LEFT', leftAt: new Date('2026-10-01T00:00:00.000Z') },
+    });
+    assert.deepEqual(await deleteRequest(classA.id, tokenA), conflict);
+    assert.deepEqual(await deleteRequest(unusedClassA.id, tokenA), {
+      status: 200, body: { success: true, message: 'Xóa lớp thành công' },
+    });
+    assert.deepEqual(await deleteRequest(unusedClassA.id, tokenA), notFound);
+    assert.equal(await prisma.class.findUnique({ where: { id: unusedClassA.id } }), null);
+    console.log('PASS: DELETE Class trả 409 khi có Enrollment ACTIVE/LEFT, 404 nếu khác chủ, 200 khi chưa dùng');
+  } finally {
+    try {
+      if (classIds.length) {
+        await prisma.classStudent.deleteMany({ where: { classId: { in: classIds } } });
+        await prisma.class.deleteMany({ where: { id: { in: classIds } } });
+      }
+      if (userIds.length) {
+        await prisma.student.deleteMany({ where: { teacherId: { in: userIds } } });
+        await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      }
+    } finally {
+      try {
+        if (server) {
+          await new Promise<void>((resolve, reject) => {
+            server!.close(error => error ? reject(error) : resolve());
+          });
+        }
+      } finally {
+        await prisma.$disconnect();
+      }
+    }
+  }
+});

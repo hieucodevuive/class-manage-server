@@ -128,12 +128,20 @@ export const deleteClassController: RequestHandler = async (req, res) => {
     return;
   }
 
-  const classRecord = await deleteClass(result.data, res.locals.auth.userId);
+  const deletion = await deleteClass(result.data, res.locals.auth.userId);
 
-  if (!classRecord) {
+  if (deletion.status === 'not_found') {
     res.status(404).json({
       success: false,
       message: 'Không tìm thấy lớp',
+    });
+    return;
+  }
+
+  if (deletion.status === 'has_enrollments') {
+    res.status(409).json({
+      success: false,
+      message: 'Không thể xóa lớp đã có học sinh ghi danh',
     });
     return;
   }

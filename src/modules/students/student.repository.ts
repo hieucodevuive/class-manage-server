@@ -38,12 +38,31 @@ export async function updateStudentById(id: string, teacherId: number, data: Pri
 
 export async function deleteStudentById(id: string, teacherId: number) {
   try {
-    return await prisma.student.delete({
+    await prisma.student.delete({
       where: { id, teacherId },
     });
+
+    return { status: 'deleted' } as const;
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-      return null;
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2025') {
+        return { status: 'not_found' } as const;
+      }
+
+      const adapterError = error.meta?.driverAdapterError as {
+        cause?: { originalCode?: string; originalMessage?: string };
+      } | undefined;
+
+      // Khóa ngoại RESTRICT bảo vệ lịch sử, kể cả khi Enrollment vừa được tạo đồng thời.
+      if (
+        error.code === 'P2003'
+        || (
+          adapterError?.cause?.originalCode === '23503'
+          && adapterError.cause.originalMessage?.includes('"ClassStudent_studentId_fkey"')
+        )
+      ) {
+        return { status: 'has_enrollments' } as const;
+      }
     }
 
     throw error;

@@ -66,6 +66,7 @@ model Class {
   note       String?     @db.Text
   createdAt  DateTime    @default(now()) @db.Timestamptz(3)
   updatedAt  DateTime    @updatedAt @db.Timestamptz(3)
+  enrollments ClassStudent[]
 
   @@index([teacherId], map: "Class_teacher_id_idx")
 }
@@ -91,6 +92,28 @@ model Student {
   note         String?       @db.Text
   createdAt    DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime      @updatedAt @db.Timestamptz(3)
+  enrollments  ClassStudent[]
 
   @@index([teacherId], map: "Student_teacher_id_idx")
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  LEFT
+}
+
+model ClassStudent {
+  id          String           @id @default(uuid()) @db.Uuid
+  classId     Int
+  classRecord Class            @relation(fields: [classId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "ClassStudent_classId_fkey")
+  studentId   String           @db.Uuid
+  student     Student          @relation(fields: [studentId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "ClassStudent_studentId_fkey")
+  joinedAt    DateTime         @db.Date
+  leftAt      DateTime?        @db.Date
+  status      EnrollmentStatus
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@unique([classId, studentId], map: "ClassStudent_classId_studentId_key")
+  @@index([studentId], map: "ClassStudent_studentId_idx")
 }

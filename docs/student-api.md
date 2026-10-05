@@ -108,5 +108,11 @@ Yêu cầu access token và role `TEACHER` hoặc `ADMIN`. Chỉ xóa hồ sơ t
 ```
 
 ID sai định dạng trả 400; ID không tồn tại hoặc thuộc tài khoản khác trả 404.
-Hiện chưa có Enrollment/Payment nên thao tác này xóa hẳn hồ sơ. Khi bổ sung các
-quan hệ lịch sử, phải chặn xóa hồ sơ đã được sử dụng để giữ dữ liệu học phí.
+Hồ sơ chưa có Enrollment được xóa hẳn. Nếu đã từng có Enrollment, kể cả trạng
+thái `LEFT`, trả 409 và giữ nguyên hồ sơ cùng lịch sử:
+
+```json
+{ "success": false, "message": "Không thể xóa học sinh đã có lịch sử ghi danh" }
+```
+
+Khóa ngoại `RESTRICT` cũng chặn xóa khi Enrollment được tạo đồng thời.

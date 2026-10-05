@@ -122,12 +122,20 @@ export const deleteStudentController: RequestHandler = async (req, res) => {
     return;
   }
 
-  const student = await deleteStudent(result.data, res.locals.auth.userId);
+  const deletion = await deleteStudent(result.data, res.locals.auth.userId);
 
-  if (!student) {
+  if (deletion.status === 'not_found') {
     res.status(404).json({
       success: false,
       message: 'Không tìm thấy học sinh',
+    });
+    return;
+  }
+
+  if (deletion.status === 'has_enrollments') {
+    res.status(409).json({
+      success: false,
+      message: 'Không thể xóa học sinh đã có lịch sử ghi danh',
     });
     return;
   }

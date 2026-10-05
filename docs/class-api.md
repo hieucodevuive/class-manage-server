@@ -79,9 +79,14 @@ Không cần body. Thành công: 200.
 ```
 
 Truy vấn xóa kiểm tra đồng thời ID lớp và chủ sở hữu. Xóa lớp của tài khoản khác
-hoặc xóa lại trả 404. Hiện là hard delete vì chưa có Enrollment/Payment.
-Trước khi thêm dữ liệu lịch sử, cần bổ sung quy tắc chặn xóa lớp đã được sử dụng;
-không cascade xóa Enrollment/Payment để làm mất lịch sử tài chính.
+hoặc xóa lại trả 404. Lớp chưa có Enrollment được xóa hẳn. Nếu đã từng có
+Enrollment, kể cả trạng thái `LEFT`, trả 409 và giữ nguyên lớp cùng lịch sử:
+
+```json
+{ "success": false, "message": "Không thể xóa lớp đã có học sinh ghi danh" }
+```
+
+Khóa ngoại `RESTRICT` cũng chặn xóa khi Enrollment được tạo đồng thời.
 
 ## Định dạng Class trong response
 
@@ -112,7 +117,7 @@ chưa được triển khai. Response hiện không trả `teacherId`.
 
 Thiếu/sai/hết hạn access token: 401. Role không được phép: 403 theo middleware
 hiện có. Input schema sai: 400 với success/message và errors theo field;
-lỗi toàn body dùng field `body`. Không có lớp: 404.
+lỗi toàn body dùng field `body`. Không có lớp: 404. Xóa lớp đã có Enrollment: 409.
 
 Chạy `npx tsc --noEmit` và `npm run test:classes`.
 Test cần .env, database đã migrate và tài khoản đã seed. Test tự mở server ở

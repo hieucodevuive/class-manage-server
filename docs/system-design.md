@@ -92,7 +92,7 @@ Business routes tiếp tục dùng middleware auth/role hiện có. Vai trò `AD
 
 - Prisma hiện dùng tên vật lý `"User"`, `"Class"` và cột camelCase, trong khi tài liệu dùng users/classes và snake_case để diễn đạt mô hình. Cần giữ naming convention hiện có trừ khi người dùng duyệt đổi.
 - `Class.id` hiện là `Int` tự tăng; `User.id` cũng là `Int`. Khóa ngoại trỏ đến Class/User phải tương thích. Chưa suy rộng quyết định ID Class sang ID Student hoặc các bảng mới.
-- Tài liệu cũ mô tả khả năng học sinh rời lớp rồi ghi danh lại bằng enrollment mới và gợi ý unique index chỉ cho trạng thái ACTIVE. Yêu cầu mới `UNIQUE(class_id, student_id)` không cho phép hai bản ghi cho cùng một cặp. Cần xác nhận nghiệp vụ ghi danh lại trước bước Enrollment.
+- Tài liệu cũ mô tả khả năng học sinh rời lớp rồi ghi danh lại bằng enrollment mới và gợi ý unique index chỉ cho trạng thái ACTIVE. Quyết định hiện tại dùng `UNIQUE(class_id, student_id)`; xem mục 9 về cách xử lý ghi danh lại.
 - Khi thêm `teacher_id NOT NULL` cho Class, phải kiểm tra dữ liệu Class đã tồn tại và thống nhất cách gán chủ sở hữu trước migration; không tự backfill.
 
 ## 8. Đăng ký và duyệt tài khoản (quyết định 2026-10-01)
@@ -118,3 +118,17 @@ Business routes tiếp tục dùng middleware auth/role hiện có. Vai trò `AD
   cho `ACTIVE`; middleware kiểm tra trạng thái hiện tại của tài khoản trước khi
   cho dùng access token ở các API có xác thực. Response user giữ `id`, `email`,
   `role`, không lộ `passwordHash` hoặc `status`.
+
+## 9. Enrollment và bảo vệ lịch sử (quyết định 2026-10-05)
+
+- Mỗi cặp Class–Student chỉ có một bản ghi Enrollment theo
+  `UNIQUE(class_id, student_id)`. Khi Enrollment đã `LEFT`, không tạo bản ghi ghi
+  danh mới cho cùng cặp và không ghi đè `joined_at`/`left_at` cũ.
+- Khi Class hoặc Student đã có Enrollment, API DELETE sẽ trả `409` để giữ lịch
+  sử. Có thể dùng API PATCH hiện có để chuyển trạng thái Class/Student sang
+  `INACTIVE` khi phù hợp. DELETE Class và DELETE Student đều đã xử lý `409`;
+  chưa mở API tạo Enrollment.
+- Migration `20261005215214_create_class_student_model` đã áp dụng. Theo naming
+  convention Prisma hiện tại, bảng vật lý là `"ClassStudent"`; `classId` là Int,
+  `studentId` là UUID. Hai khóa ngoại dùng `ON DELETE RESTRICT`. Prisma Client đã
+  generate. Chưa có API Enrollment.
