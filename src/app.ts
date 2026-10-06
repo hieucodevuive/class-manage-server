@@ -32,6 +32,11 @@ app.use((req, res) => {
 });
 
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+  if (err?.type === 'entity.parse.failed' && err.status === 400) {
+    res.status(400).json({ success: false, message: 'Body JSON không hợp lệ' });
+    return;
+  }
+
   console.error(err);
 
   res.status(500).json({

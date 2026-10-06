@@ -126,9 +126,64 @@ Business routes tiếp tục dùng middleware auth/role hiện có. Vai trò `AD
   danh mới cho cùng cặp và không ghi đè `joined_at`/`left_at` cũ.
 - Khi Class hoặc Student đã có Enrollment, API DELETE sẽ trả `409` để giữ lịch
   sử. Có thể dùng API PATCH hiện có để chuyển trạng thái Class/Student sang
-  `INACTIVE` khi phù hợp. DELETE Class và DELETE Student đều đã xử lý `409`;
-  chưa mở API tạo Enrollment.
+  `INACTIVE` khi phù hợp. DELETE Class và DELETE Student đều đã xử lý `409`.
 - Migration `20261005215214_create_class_student_model` đã áp dụng. Theo naming
   convention Prisma hiện tại, bảng vật lý là `"ClassStudent"`; `classId` là Int,
   `studentId` là UUID. Hai khóa ngoại dùng `ON DELETE RESTRICT`. Prisma Client đã
-  generate. Chưa có API Enrollment.
+  generate.
+- `POST /api/classes/:classId/students` đã triển khai ngày 2026-10-06. Backend
+  kiểm tra cả Class và Student theo tài khoản đã xác thực, tạo Enrollment
+  `ACTIVE` với `leftAt = null`, trả `409` cho cặp đã tồn tại kể cả `LEFT`.
+  Request chỉ nhận `studentId` và `joinedAt`; chi tiết ở `docs/enrollment-api.md`.
+  `GET /api/classes/:classId/students` đã bổ sung danh sách ACTIVE/LEFT cùng hồ
+  sơ Student; truy vấn kiểm tra chủ sở hữu Class và lọc Student cùng giáo viên.
+  `DELETE /api/classes/:classId/students/:studentId` cho học sinh rời lớp bằng
+  cách chuyển `ACTIVE` sang `LEFT`, lưu ngày hiện tại UTC vào `leftAt` và giữ
+  lịch sử. Truy vấn kiểm tra cả chủ sở hữu Class và Student; gọi lại giữ nguyên
+  ngày nghỉ đã có. Ghi danh có ngày vào lớp trong tương lai trả 400.
+
+## 10. ClassSchedule (2026-10-06)
+
+- Model `ClassSchedule` có đúng các trường lịch học trong thiết kế. `id` là UUID,
+  `classId` là Int tham chiếu Class; không thêm `teacherId`. Giáo viên sở hữu lịch
+  được xác định qua lớp cha.
+- `DayOfWeek` gồm MONDAY đến SUNDAY; giờ dùng TIME(0), timestamps dùng
+  TIMESTAMPTZ(3). CHECK yêu cầu `endTime > startTime`; có index `classId`.
+- Lịch dùng `ON DELETE CASCADE` vì chỉ có ý nghĩa cùng lớp. Enrollment vẫn dùng
+  RESTRICT để chặn xóa Class có lịch sử; không đổi quy tắc DELETE hiện có.
+- Migration `20261006143111_create_class_schedule_model` đã áp dụng; Prisma
+  Client đã generate. Không cần backfill. Test schema, CRUD Class và Enrollment
+  đã đạt trên PostgreSQL. Chi tiết ở `docs/class-schedule-schema.md`.
+  Đã có `POST /api/classes/:classId/schedules`: body chỉ nhận `dayOfWeek`,
+  `startTime`, `endTime`; kiểm tra lớp thuộc tài khoản đăng nhập và quyền sở hữu
+  khi insert. Giờ nhận `HH:mm`/`HH:mm:ss`, trả `HH:mm:ss`; chi tiết ở
+  `docs/class-schedule-api.md`.
+- Đã có `GET /api/classes/:classId/schedules`: truy vấn lớp theo ID và giáo viên,
+  trả lịch từ MONDAY đến SUNDAY rồi theo giờ bắt đầu/kết thúc và ID. Lớp chưa có
+  lịch trả mảng rỗng; lớp của người khác trả 404, kể cả khi người gọi là ADMIN.
+  Dùng cùng định dạng giờ/response với POST, không trả dữ liệu Class/User lồng
+  nhau.
+- Đã có `GET /api/classes/:classId/schedules/:scheduleId`: kiểm tra ID lớp, UUID
+  lịch học rồi truy vấn theo ID lịch, lớp và giáo viên sở hữu lớp. Lịch khác lớp
+  hoặc khác chủ sở hữu trả 404 như lịch không tồn tại; response giữ bảy trường
+  và định dạng giờ hiện có.
+- Đã có `PATCH /api/classes/:classId/schedules/:scheduleId`: body chỉ nhận một
+  hoặc nhiều trường `dayOfWeek`, `startTime`, `endTime`. Trường không gửi giữ
+  nguyên; giờ sau khi ghép với dữ liệu DB phải có `endTime > startTime`. Đọc và
+  cập nhật đều kiểm tra ID lịch, ID lớp và giáo viên sở hữu lớp. CHECK giờ vẫn
+  bảo vệ khi có cập nhật đồng thời và được chuyển thành lỗi 400 phù hợp.
+- Đã có `DELETE /api/classes/:classId/schedules/:scheduleId`: xóa hẳn một lịch
+  bằng truy vấn kiểm tra ID lịch, ID lớp và giáo viên sở hữu lớp. Lịch khác quyền,
+  khác lớp hoặc đã xóa trả 404; thành công trả 200. Class/Student/Enrollment và
+  lịch khác được giữ nguyên, kể cả khi lớp đã có lịch sử ghi danh.
+  ClassSchedule CRUD cơ bản đã có đủ năm endpoint; Payment chưa triển khai.
+- Test POST, GET danh sách, GET chi tiết, PATCH và DELETE lịch học đã đạt 5/5 trên
+  PostgreSQL, TypeScript đạt. Test GET kiểm tra quyền A/B/ADMIN, lớp rỗng, thứ tự
+  ngày/giờ/ID, UUID và lịch không thuộc lớp trong URL. Test PATCH kiểm tra cập nhật
+  từng trường, giờ kết hợp với DB, quyền sở hữu và ba lượt cập nhật đồng thời
+  một 200/một 400. Test DELETE kiểm tra quyền sở hữu, xóa lặp/đồng thời một
+  200/một 404 và giữ nguyên lớp/học sinh/lịch sử Enrollment LEFT; chỉ tạo và dọn
+  dữ liệu thử riêng.
+- Test POST lịch học đã đạt với A/B/ADMIN, kiểm tra validation và giờ lưu trong
+  TIME. Test Auth/Class cũng đạt. Error handler chung giữ HTTP 400 cho lỗi JSON
+  parser thay vì đổi thành 500.

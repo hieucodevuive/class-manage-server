@@ -8,6 +8,10 @@
     "test:classes": "tsx --test tests/classes.integration.test.ts",
     "test:auth": "tsx --test tests/auth.approval-gate.integration.test.ts tests/auth.registration.integration.test.ts tests/auth.approval-flow.integration.test.ts",
     "test:students": "tsx --test tests/students.create.integration.test.ts tests/students.list.integration.test.ts tests/students.detail.integration.test.ts tests/students.update-delete.integration.test.ts",
+    "test:enrollments": "tsx --test tests/enrollments.create.integration.test.ts tests/enrollments.list.integration.test.ts tests/enrollments.leave.integration.test.ts",
+    "test:schedules:schema": "tsx --test tests/class-schedules.schema.integration.test.ts",
+    "test:payments:schema": "tsx --test tests/payments.schema.integration.test.ts",
+    "test:schedules": "tsx --test tests/class-schedules.create.integration.test.ts tests/class-schedules.list.integration.test.ts tests/class-schedules.detail.integration.test.ts tests/class-schedules.update.integration.test.ts tests/class-schedules.delete.integration.test.ts",
     "seed:admin": "tsx prisma/seed-admin.ts",
     "postinstall": "prisma skills sync || exit 0"
   },
