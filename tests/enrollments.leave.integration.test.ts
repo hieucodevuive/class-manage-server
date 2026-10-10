@@ -6,7 +6,7 @@ import type { Server } from 'node:http';
 import { test } from 'node:test';
 import app from '../src/app';
 import { prisma } from '../src/config/prisma';
-import type { ClassStudent } from '../src/generated/prisma/client';
+import { Prisma, type ClassStudent } from '../src/generated/prisma/client';
 import { createAccessToken } from '../src/utils/jwt';
 
 test('DELETE /api/classes/:classId/students/:studentId giữ lịch sử và chỉ cho chủ sở hữu nghỉ lớp', { timeout: 30000 }, async () => {
@@ -15,6 +15,7 @@ test('DELETE /api/classes/:classId/students/:studentId giữ lịch sử và ch�
   const classIds: number[] = [];
   const studentIds: string[] = [];
   const enrollmentIds: string[] = [];
+  const paymentIds: string[] = [];
   const prefix = `enrollment-leave-test-${randomUUID()}`;
   const setupDay = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
 
@@ -125,6 +126,37 @@ test('DELETE /api/classes/:classId/students/:studentId giữ lịch sử và ch�
     const concurrentEnrollment = await createEnrollment(classA.id, concurrentStudent.id);
     const enrollmentB = await createEnrollment(classB.id, studentB.id);
     const adminEnrollment = await createEnrollment(adminClass.id, adminStudent.id);
+    const billingPeriod = new Date(`${setupDay.toISOString().slice(0, 7)}-01T00:00:00.000Z`);
+    const createdPayment = await prisma.payment.create({
+      data: {
+        classStudentId: adminEnrollment.id,
+        billingPeriod,
+        amountDue: adminClass.tuitionFee.toFixed(2),
+      },
+    });
+    paymentIds.push(createdPayment.id);
+    const adminPayment = await prisma.payment.findUniqueOrThrow({ where: { id: createdPayment.id } });
+    assert.deepEqual(adminPayment, createdPayment);
+    assert.match(adminPayment.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    assert.equal(adminPayment.classStudentId, adminEnrollment.id);
+    assert.equal(adminPayment.billingPeriod.toISOString(), billingPeriod.toISOString());
+    assert.ok(Prisma.Decimal.isDecimal(adminPayment.amountDue));
+    assert.ok(Prisma.Decimal.isDecimal(adminPayment.amountPaid));
+    assert.equal(adminPayment.amountDue.toFixed(2), adminClass.tuitionFee.toFixed(2));
+    assert.equal(adminPayment.amountPaid.toFixed(2), '0.00');
+    assert.equal(adminPayment.paidAt, null);
+    assert.equal(adminPayment.paymentMethod, null);
+    assert.equal(adminPayment.note, null);
+
+    async function assertAdminPaymentUnchanged() {
+      assert.deepEqual(await prisma.payment.findUniqueOrThrow({ where: { id: adminPayment.id } }), adminPayment);
+      const enrollmentWithPayments = await prisma.classStudent.findUniqueOrThrow({
+        where: { id: adminEnrollment.id },
+        include: { payments: true },
+      });
+      assert.deepEqual(enrollmentWithPayments.payments, [adminPayment]);
+    }
+    await assertAdminPaymentUnchanged();
     const adminSchedule = await prisma.classSchedule.create({
       data: {
         classId: adminClass.id,
@@ -245,6 +277,7 @@ test('DELETE /api/classes/:classId/students/:studentId giữ lịch sử và ch�
     const adminLeft = await prisma.classStudent.findUniqueOrThrow({ where: { id: adminEnrollment.id } });
     assertNewLeave(adminEnrollment, adminLeft, adminStartDay, adminEndDay);
     assert.deepEqual(adminLeave, successResponse(adminLeft));
+    await assertAdminPaymentUnchanged();
 
     const list = await request(`/classes/${classA.id}/students`, 'GET', tokenA);
     assert.equal(list.status, 200);
@@ -262,15 +295,17 @@ test('DELETE /api/classes/:classId/students/:studentId giữ lịch sử và ch�
       body: { success: false, message: 'Học sinh đã từng được ghi danh vào lớp này' },
     });
 
-    // Lớp ADMIN chỉ có một Enrollment LEFT, vẫn không được xóa lịch sử.
+    // Lớp ADMIN có một Enrollment LEFT và Payment, vẫn không được xóa lịch sử.
     assert.deepEqual(await request(`/classes/${adminClass.id}`, 'DELETE', tokenAdmin), {
       status: 409,
       body: { success: false, message: 'Không thể xóa lớp đã có học sinh ghi danh' },
     });
+    await assertAdminPaymentUnchanged();
     assert.deepEqual(await request(`/students/${adminStudent.id}`, 'DELETE', tokenAdmin), {
       status: 409,
       body: { success: false, message: 'Không thể xóa học sinh đã có lịch sử ghi danh' },
     });
+    await assertAdminPaymentUnchanged();
     assert.deepEqual(await prisma.classSchedule.findUniqueOrThrow({ where: { id: adminSchedule.id } }), adminSchedule);
 
     for (const untouched of [otherEnrollmentA, future, enrollmentB, malformedOwnership, historical]) {
@@ -281,9 +316,12 @@ test('DELETE /api/classes/:classId/students/:studentId giữ lịch sử và ch�
     assert.equal(await prisma.classStudent.count({ where: { id: { in: enrollmentIds } } }), enrollmentIds.length);
     assert.deepEqual(await prisma.class.findMany({ where: { id: { in: classIds } }, orderBy: { id: 'asc' } }), initialClasses);
     assert.deepEqual(await prisma.student.findMany({ where: { id: { in: studentIds } }, orderBy: { id: 'asc' } }), initialStudents);
-    console.log('PASS: nghỉ lớp đúng ownership, ngày UTC, body bị bỏ qua, lịch sử/idempotence/concurrency và bảo vệ Class/Student');
+    console.log('PASS: nghỉ lớp đúng ownership, ngày UTC, body bị bỏ qua, lịch sử/idempotence/concurrency và bảo vệ Class/Student/Payment');
   } finally {
     try {
+      if (paymentIds.length) {
+        await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
+      }
       if (enrollmentIds.length) {
         await prisma.classStudent.deleteMany({ where: { id: { in: enrollmentIds } } });
       }

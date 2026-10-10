@@ -176,7 +176,7 @@ Business routes tiếp tục dùng middleware auth/role hiện có. Vai trò `AD
   bằng truy vấn kiểm tra ID lịch, ID lớp và giáo viên sở hữu lớp. Lịch khác quyền,
   khác lớp hoặc đã xóa trả 404; thành công trả 200. Class/Student/Enrollment và
   lịch khác được giữ nguyên, kể cả khi lớp đã có lịch sử ghi danh.
-  ClassSchedule CRUD cơ bản đã có đủ năm endpoint; Payment chưa triển khai.
+  ClassSchedule CRUD cơ bản đã có đủ năm endpoint; tiến độ Payment ở mục 11.
 - Test POST, GET danh sách, GET chi tiết, PATCH và DELETE lịch học đã đạt 5/5 trên
   PostgreSQL, TypeScript đạt. Test GET kiểm tra quyền A/B/ADMIN, lớp rỗng, thứ tự
   ngày/giờ/ID, UUID và lịch không thuộc lớp trong URL. Test PATCH kiểm tra cập nhật
@@ -187,3 +187,194 @@ Business routes tiếp tục dùng middleware auth/role hiện có. Vai trò `AD
 - Test POST lịch học đã đạt với A/B/ADMIN, kiểm tra validation và giờ lưu trong
   TIME. Test Auth/Class cũng đạt. Error handler chung giữ HTTP 400 cho lỗi JSON
   parser thay vì đổi thành 500.
+
+## 11. Payment (2026-10-10)
+
+- Model `Payment` có đúng 10 trường trong thiết kế; bảng vật lý `"Payment"`,
+  cột camelCase theo convention hiện tại. ID và `classStudentId` dùng UUID;
+  `classStudentId` tham chiếu `"ClassStudent"."id"`.
+- `billingPeriod` dùng DATE với CHECK ngày hữu hạn và ngày đầu tháng. Hai trường
+  tiền dùng NUMERIC(12,2), không âm và không nhận NaN; `amountPaid` default 0.
+  `paidAt`/timestamps dùng TIMESTAMPTZ(3); `paidAt`, `paymentMethod`, `note` nullable.
+  `PaymentMethod` gồm CASH/BANK_TRANSFER/OTHER.
+- Unique `(classStudentId, billingPeriod)` đảm bảo một khoản học phí trong mỗi
+  kỳ của Enrollment; index này cũng phục vụ truy vấn theo `classStudentId`.
+  Payment không lưu `teacherId`, `studentId`, `classId` hoặc payment status.
+- `amountDue` được lưu riêng: sửa học phí Class không đổi Payment cũ. Khóa ngoại
+  RESTRICT chặn xóa Enrollment đã có Payment. Nghỉ lớp vẫn giữ cả Enrollment
+  và Payment; Class/Student có Enrollment vẫn bị API DELETE chặn với 409.
+- Migration `20261006154547_create_payment_model` đã áp dụng; Prisma Client đã
+  generate. Đây là bảng mới, không cần backfill và không reset database.
+  Database có đủ 10 migration; Prisma validate và TypeScript đạt.
+- Test schema Payment đạt 1/1 trên PostgreSQL, dữ liệu thử được rollback. Test
+  Enrollment đạt 3/3, đã kiểm tra Prisma ghi/đọc Payment và API nghỉ lớp/xóa
+  Class/Student giữ lịch sử; dữ liệu thử của API đã được dọn.
+- Chi tiết schema, migration và kiểm tra ở `docs/payment-schema.md`.
+- Đã có `POST /api/payments`: body chỉ nhận `classStudentId`, `billingPeriod` và
+  tùy chọn `amountDue`, `note`. Ngày hợp lệ được chuẩn hóa về đầu tháng. Không
+  gửi `amountDue` thì lưu snapshot từ học phí Class được đọc trong request;
+  khoản mới có `amountPaid = 0`, `paidAt`/`paymentMethod` null.
+- POST kiểm tra Enrollment theo ID, chủ sở hữu Class và Student; kiểm tra lại
+  điều kiện quyền sở hữu trong `enrollment.connect` khi ghi. Enrollment không
+  tồn tại/ngoài phạm vi trả 404, kể cả ADMIN. Cho phép ACTIVE/LEFT để quản lý
+  học phí lịch sử, không thêm quy tắc giới hạn tháng theo ngày học.
+- Trùng kỳ sau chuẩn hóa trả 409, gồm cả request đồng thời. Response chỉ trả
+  10 trường Payment; tiền là chuỗi Decimal hai chữ số phần lẻ, kỳ học phí là
+  YYYY-MM-01 và timestamps ISO UTC. Không trả dữ liệu cha lồng nhau.
+- Test POST đạt 1/1 trên PostgreSQL và TypeScript đạt. Đã kiểm tra A/B/ADMIN,
+  auth, validation, Decimal/date, snapshot sau đổi học phí lớp và tạo trùng kỳ
+  đồng thời một 201/một 409; dữ liệu thử đã được dọn. Chi tiết ở
+  `docs/payment-api.md`.
+- Sau khi người dùng duyệt query/filter, đã thêm `GET /api/payments` với bốn
+  query tùy chọn `classId`, `studentId`, `billingPeriod`, `status`. Query kết
+  hợp bằng AND, ngày chuẩn hóa về đầu tháng; query sai/lặp/tên lạ trả 400.
+  Danh sách giới hạn qua Enrollment → Class và Student cùng tài khoản;
+  ADMIN chỉ đọc dữ liệu của mình, ID bộ lọc ngoài phạm vi trả mảng rỗng.
+- GET bao gồm học phí của Enrollment LEFT và Class/Student không còn ACTIVE;
+  sắp xếp kỳ giảm dần, thời điểm tạo giảm dần rồi ID giảm dần. Response thêm
+  `status` tính bằng Decimal: PAID khi `amountPaid >= amountDue` (gồm 0/0),
+  UNPAID khi chưa trả và còn tiền phải thu, PARTIAL khi trả một phần.
+  Bộ lọc trạng thái so sánh các cột Decimal trong DB. Không thêm cột status,
+  không đổi schema/POST hoặc tự ghi thời gian thanh toán khi đọc.
+- Test Payment đạt 2/2 trên PostgreSQL (POST và GET danh sách), TypeScript đạt.
+  GET kiểm tra auth, quyền A/B/ADMIN, quan hệ chéo, mảng rỗng, bốn bộ lọc AND,
+  Decimal/0 đồng, ngày/UUID/query sai, thứ tự ba tầng và giữ nguyên lịch sử.
+  Dữ liệu thử đã được dọn; cách gọi và kết quả ở `docs/payment-api.md`.
+- Đã thêm `GET /api/payments/:id`: validate UUID 36 ký tự, kiểm tra ID Payment
+  cùng quyền sở hữu Class và Student qua Enrollment ngay trong truy vấn.
+  Không tồn tại/khác tài khoản trả cùng 404, kể cả ADMIN. Response dùng cùng
+  11 trường/serializer trạng thái với danh sách; giữ nguyên học phí lịch sử,
+  snapshot và dữ liệu cha, bao gồm Enrollment LEFT/Class/Student không ACTIVE.
+- Test Payment đạt 3/3 trên PostgreSQL (POST, danh sách, chi tiết), TypeScript
+  đạt. Chi tiết kiểm tra UUID/auth/quyền A/B/ADMIN/quan hệ chéo, response,
+  trạng thái Decimal, học phí lịch sử và snapshot sau đổi học phí lớp.
+  GET không thay đổi dữ liệu; fixture riêng đã được dọn.
+- Người dùng đã duyệt quy tắc PATCH tại `docs/payment-update-proposal.md`.
+  Đã thêm `PATCH /api/payments/:id`, chỉ nhận `amountDue`, `amountPaid`,
+  `paymentMethod`, `note`; trường không gửi giữ nguyên. `amountPaid` là tổng
+  đã thu thay thế giá trị cũ, cho phép sửa giảm hoặc trả thừa. Tiền dùng Decimal;
+  sửa `amountDue` chỉ điều chỉnh khoản này, không đồng bộ lại từ Class.
+- Sau khi ghép dữ liệu, tổng đã thu dương phải có phương thức. `paidAt` null
+  khi chưa thu hoặc trả thiếu; khi đã thu và trả đủ giữ thời điểm đã có hoặc
+  dùng thời điểm server. Khoản 0/0 thuộc PAID nhưng `paidAt` null. Client không
+  được sửa ownership, Enrollment, kỳ, status hoặc timestamps.
+- PATCH đọc và ghi đều kiểm tra ID Payment và chủ sở hữu Class/Student qua
+  Enrollment; vẫn sửa được học phí lịch sử trong phạm vi. Truy vấn ghi đối
+  chiếu toàn bộ bản ghi đã đọc, kể cả null/Decimal, tránh ghi đè dữ liệu thay
+  đổi giữa lúc đọc và ghi. Xung đột trả 409; bản ghi mất/ngoài phạm vi trả 404.
+  Response dùng cùng 11 trường với GET; không đổi schema hoặc API đã có.
+- Test Payment đạt 4/4 trên PostgreSQL (POST, danh sách, chi tiết, PATCH),
+  TypeScript đạt. PATCH kiểm tra quyền/auth/validation, tổng tiền Decimal,
+  phương thức sau ghép, paidAt và các chuyển trạng thái, snapshot riêng của
+  khoản và lịch sử. Hai request đọc cùng snapshot trả một 200/một 409;
+  đổi dữ liệu nhưng giữ updatedAt vẫn bị phát hiện; đổi ownership Student
+  giữa đọc/ghi trả 404 và không sửa khoản. Dữ liệu thử riêng đã được dọn.
+- Người dùng đã chọn phương án A trong `docs/payment-delete-proposal.md`:
+  giữ mọi Payment, tạm chưa mở API DELETE. Sửa sai bằng PATCH hiện có.
+  Model không chứng minh được khoản chưa từng thu sau khi PATCH về 0/null;
+  chưa bổ sung lịch sử từng lần thu/sửa hoặc trạng thái hủy.
+- Phạm vi Payment cơ bản hiện có bốn endpoint POST, GET danh sách, GET chi
+  tiết và PATCH. DELETE không phải bước chờ triển khai theo quyết định này;
+  muốn thay đổi chiến lược giữ bản ghi cần yêu cầu và quyết định mới.
+
+## 12. Tổng kiểm tra backend (2026-10-10)
+
+- Đã chạy TypeScript, Prisma validate và migrate status: đều đạt, database
+  báo đủ 10 migration đã cập nhật. Không chạy migration/reset/seed trong lượt.
+- Chạy lần lượt tám script hiện có: Auth 3/3, Class 2/2, Student 5/5,
+  Enrollment 3/3, Schedule 5/5, Payment 4/4, schema Schedule 1/1 và schema
+  Payment 1/1. Tổng 24/24 đạt trên PostgreSQL, không fail/skipped/cancelled.
+- Code hiện có 29 cặp phương thức/đường dẫn và 7 model ứng dụng. Payment giữ
+  bốn endpoint, không DELETE theo phương án A. Test đã kiểm tra quyền A/B,
+  snapshot và giữ Payment khi nghỉ lớp/chặn xóa Class/Student có ghi danh.
+- Báo cáo chi tiết: `docs/backend-status-report.md`, gồm danh sách API,
+  bảng/quan hệ, logic, kết quả thật và giới hạn coverage. Lúc tổng kiểm tra
+  chưa có test HTTP xuyên suốt; test này được bổ sung ở mục 15. Một số
+  ADMIN/PENDING theo endpoint còn cần bổ sung. Các case logout/refresh
+  replay/expiry được thêm ở mục 14.
+- Bốn request thử ngoài bộ test xác nhận lỗi middleware chung: body quá lớn
+  và charset/encoding không hỗ trợ trả 500 thay vì 413/415; cả bốn response
+  lỗi đọc body thiếu CORS headers. Lượt tổng kiểm tra chỉ ghi nhận; các lỗi
+  này đã được sửa trong bước tiếp theo ở mục 13.
+- Lượt này chỉ tổng kiểm tra và cập nhật tài liệu. Bước tiếp theo do người
+  dùng chọn, không tự mở rộng API hoặc chiến lược DELETE Payment.
+
+## 13. Sửa lỗi HTTP parser và CORS (2026-10-10)
+
+- Sau khi người dùng gửi `next`, đã sửa middleware chung trong `src/app.ts`:
+  CORS chạy trước JSON/cookie parser, giữ origin cấu hình và credentials.
+- Error handler giữ JSON sai cú pháp 400, trả body quá lớn 413 và charset/
+  encoding không hỗ trợ 415 bằng thông báo cố định. Kiểm tra cả type/status
+  parser; không trả/log raw body trong các nhánh này. Lỗi khác vẫn trả 500.
+- Thêm `tests/http-parser.integration.test.ts` và script `npm run test:http`.
+  Test kiểm tra bốn lỗi parser cùng CORS, preflight 204, validation 400,
+  Class thiếu token 401 và route không tồn tại 404; không ghi database.
+- TypeScript đạt; test HTTP 1/1, Auth 3/3 và Class 2/2 đạt (tổng 6/6), không
+  fail/skipped/cancelled. Chỉ chạy các bộ phù hợp với thay đổi middleware;
+  kết quả tổng kiểm tra 24/24 của lượt trước được giữ riêng ở mục 12.
+- Cập nhật kết quả trước/sau và giới hạn kiểm chứng trong
+  `docs/backend-status-report.md`. Không đổi schema, endpoint hoặc JWT flow.
+  Bước bổ sung test logout/refresh được người dùng duyệt và thực hiện ở mục 14.
+
+## 14. Kiểm tra logout và refresh token (2026-10-10)
+
+- Sau khi người dùng gửi `next`, đã thêm hai test
+  `tests/auth.refresh.integration.test.ts` và
+  `tests/auth.logout.integration.test.ts` vào script `npm run test:auth`.
+- Refresh kiểm tra token thiếu/rỗng/sai/hết hạn, rotation trên cùng bản ghi,
+  DB lưu hash, chặn token đã dùng, hai request song song một 200/một 401;
+  cookie của request thắng vẫn dùng được và access token gọi `/me` được.
+- Logout kiểm tra hai phiên A và một phiên B: thu hồi đúng A1, xóa cookie,
+  giữ nguyên A2/B và cả hai vẫn refresh được. Gọi lại/thiếu/rỗng/sai cookie
+  vẫn 200; access JWT còn hạn tiếp tục dùng được theo thiết kế hiện tại.
+- Bộ Auth đạt 5/5 trên PostgreSQL, không fail/skipped/cancelled. TypeScript
+  src và typecheck riêng hai test mới đạt sau khi sửa lỗi kiểu closure trong
+  test logout. Fixtures được dọn theo ID riêng; không reset/migrate/seed.
+- Runtime Auth giữ nguyên. Coverage chưa gồm ACTIVE chuyển PENDING sau cấp
+  token hoặc refresh/logout đồng thời. Logout dùng cookie cũ sau rotation
+  không thu hồi token mới theo truy vấn hiện có; chưa đổi chính sách phiên.
+- Cập nhật `docs/auth-approval.md` và `docs/backend-status-report.md`.
+  Test HTTP xuyên suốt nghiệp vụ được người dùng duyệt và thực hiện ở mục 15.
+
+## 15. Kiểm tra HTTP xuyên suốt nghiệp vụ (2026-10-10)
+
+- Sau khi người dùng gửi `next`, thêm
+  `tests/workflow.e2e.integration.test.ts` và script `npm run test:e2e`.
+  Một ADMIN fixture riêng được tạo trong DB; hai giáo viên A/B đi qua HTTP
+  đăng ký PENDING → ADMIN login/duyệt → login ACTIVE và gọi `/me`.
+- Mỗi giáo viên tạo Class/Student, ghi danh, lịch và học phí qua API thật.
+  Kiểm tra backend tự gán ownership dù client gửi teacherId/teacher_id của
+  tài khoản khác; hai hồ sơ cùng tên vẫn có ID riêng. Các danh sách và hồ sơ
+  Student lồng trong Enrollment thuộc đúng tài khoản.
+- Hai chiều A/B không truy cập/sửa/xóa hoặc tạo quan hệ trên tài nguyên của
+  nhau. Filter học phí ngoài phạm vi trả rỗng; ADMIN cũng không đọc Class A.
+  TEACHER không xem/duyệt đăng ký; danh sách nghiệp vụ vẫn yêu cầu đăng nhập.
+- Đổi học phí Class 500000.00 → 600000.00 giữ amountDue khoản cũ 500000.00.
+  Thu một phần → đủ chuyển UNPAID/PARTIAL/PAID, amountPaid là tổng thay thế,
+  phương thức được giữ và paidAt là thời điểm server thu đủ. Tạo trùng kỳ 409.
+- Nghỉ lớp giữ Enrollment/Payment/Schedule, ngày nghỉ UTC và idempotence;
+  ghi danh lại 409, xóa Class/Student có lịch sử 409. Nhánh dữ liệu B không
+  đổi sau các thao tác A; ownership Class/Student được kiểm tra lại trong DB.
+- Test E2E đạt 1/1 trên PostgreSQL, không fail/skipped/cancelled. TypeScript
+  src và typecheck riêng file test đều đạt. Không chạy lại toàn bộ các bộ
+  module trong lượt này; các kết quả trước giữ riêng theo từng bước.
+- Dọn theo exact email UUID fixture, tìm quan hệ theo chủ sở hữu/ID cha,
+  Payment trước Enrollment rồi Schedule/Class/Student/RefreshToken/User;
+  vẫn dọn được khi POST commit trước assertion lỗi. Không in token/cookie,
+  không reset/migrate/seed ADMIN thật hoặc thay đổi API/runtime.
+- Kết quả và giới hạn ở `docs/backend-status-report.md`. Bước tiếp theo chỉ
+  thực hiện khi người dùng chọn; chưa kiểm tra ACTIVE → PENDING sau cấp token.
+
+## 16. Chạy toàn bộ bộ test hiện có (2026-10-10)
+
+- Theo yêu cầu `TESL ALL`, chạy lần lượt toàn bộ 10 script test. Inventory
+  gồm 26 file, tất cả được script tham chiếu đúng một lần.
+- Kết quả: HTTP 1/1, Auth 5/5, Class 2/2, Student 5/5, Enrollment 3/3,
+  Schedule 5/5, Payment 4/4, schema Schedule 1/1, schema Payment 1/1 và
+  E2E 1/1. Tổng **28/28 đạt**, không fail/skipped/cancelled; exit code đều 0.
+- TypeScript trong phạm vi src đạt, Prisma validate hợp lệ, migrate status
+  báo 10 migration và database đã cập nhật. Không reset/chạy migration/seed,
+  commit/push hoặc đổi source/test/script trong lượt này.
+- Test dùng fixture và cleanup/rollback hiện có. Kết quả chi tiết ở mục 10
+  của `docs/backend-status-report.md`; các giới hạn coverage vẫn được giữ.
+  Đã chốt bộ test hiện có, dừng và chờ người dùng chọn bước tiếp theo.

@@ -32,3 +32,47 @@ ADMIN đăng nhập bằng `POST /api/auth/login`, lấy `data.accessToken` và 
 Sau khi được duyệt, giáo viên gọi lại `POST /api/auth/login` để lấy access token và refresh cookie. Không có email thông báo tự động; ADMIN hoặc giao diện cần thông báo cho giáo viên theo cách đang sử dụng.
 
 Chạy `npm run test:auth` để kiểm tra luồng trên database hiện tại. Test chỉ tạo rồi xóa các tài khoản fixture riêng của nó; không tạo ADMIN sử dụng thật.
+
+## Refresh và logout
+
+| API | Dữ liệu xác thực | Kết quả |
+| --- | --- | --- |
+| `POST /api/auth/refresh` | Cookie `refreshToken` | Token hợp lệ và User ACTIVE: 200, access token và refresh cookie mới |
+| `POST /api/auth/logout` | Cookie `refreshToken`, nếu có | 200, thu hồi phiên tương ứng và xóa cookie |
+| `GET /api/auth/me` | Bearer access token | Trả public user của tài khoản đã xác thực |
+
+- Refresh không yêu cầu Bearer token. Cookie thiếu/rỗng, token sai/đã dùng/
+  hết hạn hoặc User PENDING trả 401; không cấp hoặc xóa cookie ở response lỗi.
+- Mỗi lần login tạo một phiên riêng. Refresh đổi hash trên cùng bản ghi và
+  đặt cookie mới; cookie cũ không dùng lại được. Cookie dùng Path `/api/auth`,
+  HttpOnly, SameSite=Lax, Secure khi production; thời hạn được cấu hình 7 ngày.
+- Logout chỉ xóa phiên khớp cookie gửi lên, giữ các phiên khác kể cả cùng User.
+  Gọi lại, thiếu/rỗng hoặc cookie sai vẫn trả 200 và cookie rỗng có ngày hết hạn
+  trong quá khứ. Frontend cần xóa access token đang giữ sau khi logout.
+- Access JWT có hạn 15 phút; logout không thu hồi JWT đã cấp. Nếu User vẫn
+  ACTIVE, JWT còn hạn vẫn dùng được. Đây là hành vi của luồng hiện tại.
+
+### Kiểm tra đã chạy (2026-10-10)
+
+`npm run test:auth` đạt **5/5** trên PostgreSQL, gồm ba test đăng ký/duyệt/trạng
+thái và hai test mới:
+
+- `tests/auth.refresh.integration.test.ts`: cookie thiếu/rỗng/sai/hết hạn,
+  rotation, hash/ID/createdAt, replay, hai request song song một 200/một 401,
+  cookie thắng vẫn refresh được, access token dùng được qua `/me`.
+- `tests/auth.logout.integration.test.ts`: A có hai phiên, B có một phiên;
+  logout A1 thu hồi đúng phiên, A2/B giữ nguyên và refresh được. Kiểm tra cookie
+  bị xóa, gọi lại/thiếu/rỗng/sai cookie và access JWT còn hạn sau logout.
+
+TypeScript cho src và kiểm tra riêng hai file test mới đều đạt. Test tạo/dọn
+RefreshToken và User theo ID fixture, đóng server và ngắt Prisma; không sửa
+tài khoản sử dụng thật. Các assertion token/hash/cookie dùng thông báo cố định
+để tránh in giá trị nhạy cảm khi kiểm tra thất bại.
+
+Giới hạn: test kiểm tra cookie/DB cùng thời hạn và còn hạn, chưa kiểm tra chính
+xác khoảng 7 ngày hoặc chạy riêng cấu hình production. Hai request refresh
+được gửi song song, chưa ép chúng cùng đọc một snapshot. Chưa test ACTIVE
+chuyển PENDING sau khi đã cấp token hoặc refresh chạy đồng thời với logout.
+Theo truy vấn hiện có, nếu refresh đã đổi token trước khi logout dùng cookie
+cũ, logout không thu hồi token mới; chưa có chính sách thu hồi cả chuỗi token.
+Lượt bổ sung test giữ nguyên luồng authentication.
