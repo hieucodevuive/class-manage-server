@@ -2,6 +2,10 @@
 
 Luồng hiện tại: giáo viên đăng ký → tài khoản `PENDING` → ADMIN duyệt → tài khoản `ACTIVE` và đăng nhập được. Tài khoản ADMIN được tạo bằng lệnh nội bộ; API đăng ký công khai không thể tạo ADMIN.
 
+Swagger UI cho 7 API Auth ở `/api/docs/`, OpenAPI JSON ở
+`/api/docs/openapi.json`. Cách dùng Authorize, refresh cookie và kết nối FE
+được hướng dẫn trong [swagger-auth.md](swagger-auth.md).
+
 ## Tạo ADMIN lần đầu
 
 Đặt `SEED_ADMIN_EMAIL` và `SEED_ADMIN_PASSWORD` (ít nhất 12 ký tự) trong môi trường riêng rồi chạy `npm run seed:admin`. Script `prisma/seed-admin.ts` không đổi role/status của tài khoản đã tồn tại và không in mật khẩu. Đừng commit thông tin đăng nhập.

@@ -7,6 +7,29 @@ tạm chưa mở API DELETE**. Module có POST, GET danh sách, GET chi tiết v
 như tài liệu dưới đây. Sửa sai bằng PATCH hiện có. Quyết định và giới hạn
 lịch sử từng lần thu/sửa được ghi tại `docs/payment-delete-proposal.md`.
 
+## Xem và gọi thử bằng Swagger
+
+Mở `/api/docs/` trên host/cổng backend, chọn nhóm **Payments**. Với backend
+cổng 5000, địa chỉ là `http://localhost:5000/api/docs/`. JSON OpenAPI ở
+`/api/docs/openapi.json`, mô tả đủ bốn API học phí hiện có.
+
+Đăng nhập rồi nhập access token vào **Authorize → bearerAuth**, không thêm
+tiền tố `Bearer`. Tạo học phí dùng **Enrollment.id** ở `classStudentId`;
+xem/sửa khoản dùng **Payment.id** trong URL. Cả bốn API giới hạn dữ liệu theo
+lớp và hồ sơ Student thuộc tài khoản đang đăng nhập, kể cả ADMIN.
+
+| API | Mục đích | Response thành công |
+| --- | --- | --- |
+| `POST /api/payments` | Tạo học phí tháng, lưu snapshot số phải thu | 201, `data.payment` có 10 trường |
+| `GET /api/payments` | Danh sách và bốn bộ lọc kết hợp AND | 200, `data.payments`; mỗi khoản có 11 trường |
+| `GET /api/payments/:id` | Xem khoản học phí | 200, `data.payment` có 11 trường |
+| `PATCH /api/payments/:id` | Sửa tổng đã thu/số phải thu/phương thức/ghi chú | 200, `data.payment` có 11 trường |
+
+GET/PATCH thêm `status` tính được; POST giữ response 10 trường. Swagger ghi
+rõ `amountPaid` là tổng thay thế và lỗi 409 khi khoản thay đổi giữa lúc backend
+đọc và ghi. POST/PATCH trong **Try it out** thay đổi dữ liệu thật; dùng dữ liệu
+thử của bạn. Các quy tắc kỳ học phí, snapshot và thời điểm thu đủ ở bên dưới.
+
 ## POST /api/payments
 
 Tạo một khoản học phí tháng cho một Enrollment. Yêu cầu
@@ -408,8 +431,15 @@ lỗi JSON parser 400 hiện có. Quy tắc đã duyệt ở `docs/payment-updat
 
 ## Kiểm tra
 
+OpenAPI nằm trong `src/docs/payment.openapi.ts`, ghép paths/schemas và tag
+trong `src/docs/openapi.ts`. Khi đổi contract, đối chiếu Zod, route,
+controller/serializer và service/repository rồi cập nhật cả Swagger và guide.
+Test docs kiểm tra OpenAPI/schema/$ref, body/query/response/Decimal và request
+thiếu token; không ghi database.
+
 ```text
 npx tsc --noEmit
+npm run test:docs
 npm run test:payments
 ```
 

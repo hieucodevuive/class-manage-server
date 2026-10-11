@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "test:http": "tsx --test tests/http-parser.integration.test.ts",
+    "test:docs": "tsx --test tests/docs.integration.test.ts",
     "test:e2e": "tsx --test tests/workflow.e2e.integration.test.ts",
     "test:classes": "tsx --test tests/classes.integration.test.ts",
     "test:auth": "tsx --test tests/auth.approval-gate.integration.test.ts tests/auth.registration.integration.test.ts tests/auth.approval-flow.integration.test.ts tests/auth.refresh.integration.test.ts tests/auth.logout.integration.test.ts",
@@ -32,15 +33,18 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.23.0",
+    "swagger-ui-express": "^5.0.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.20.4",
     "@types/pg": "^8.23.1",
+    "@types/swagger-ui-express": "^4.1.8",
     "prisma": "^7.10.0",
     "tsx": "^4.23.13",
     "typescript": "^5.6.3"

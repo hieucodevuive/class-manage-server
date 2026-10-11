@@ -3,10 +3,28 @@
 Enrollment là bản ghi trong bảng Prisma `ClassStudent`, liên kết một Student với
 một Class. Hiện đã có API tạo ghi danh, danh sách và cho học sinh rời lớp.
 
+## Xem và gọi thử bằng Swagger
+
+Mở `/api/docs/` trên host/cổng backend, chọn nhóm **Enrollments**. Nếu backend
+chạy cổng 5000, địa chỉ là `http://localhost:5000/api/docs/`. JSON OpenAPI ở
+`/api/docs/openapi.json`; phần này mô tả đúng ba API ghi danh hiện có.
+
+Đăng nhập rồi nhập access token vào **Authorize → bearerAuth**, không thêm
+tiền tố `Bearer`. Cả ba API yêu cầu tài khoản ACTIVE có role TEACHER hoặc ADMIN;
+quyền sở hữu vẫn giới hạn theo tài khoản đang đăng nhập. POST/DELETE trong
+**Try it out** thay đổi dữ liệu thật, nên dùng Class/Student thử của bạn.
+
+| API | Mục đích | Response thành công |
+| --- | --- | --- |
+| `POST /api/classes/:classId/students` | Ghi danh Student vào Class | 201, `data.enrollment` |
+| `GET /api/classes/:classId/students` | Xem cả ghi danh ACTIVE/LEFT và hồ sơ Student | 200, `data.enrollments` |
+| `DELETE /api/classes/:classId/students/:studentId` | Cho học sinh nghỉ lớp, giữ lịch sử | 200, `data.enrollment` |
+
 ## POST /api/classes/:classId/students
 
 Yêu cầu `Authorization: Bearer <accessToken>` và role `TEACHER` hoặc `ADMIN`.
-`classId` là số nguyên dương không vượt quá 2147483647. Body dùng JSON:
+`classId` là chuỗi chữ số trong URL, có thể có số 0 đầu; giá trị sau chuyển đổi
+phải là số nguyên dương không vượt quá 2147483647. Body dùng JSON:
 
 ```json
 {
@@ -15,8 +33,11 @@ Yêu cầu `Authorization: Bearer <accessToken>` và role `TEACHER` hoặc `ADMI
 }
 ```
 
-- `studentId`: bắt buộc, UUID của hồ sơ Student đã có.
-- `joinedAt`: bắt buộc, ngày tồn tại theo định dạng `YYYY-MM-DD`.
+- `studentId`: bắt buộc, UUID hex dạng 8-4-4-4-12 của hồ sơ Student đã có;
+  nhận chữ hoa/thường, không giới hạn version/variant UUID.
+- `joinedAt`: bắt buộc, ngày tồn tại theo định dạng `YYYY-MM-DD`, năm 0001–9999,
+  không nhận null hoặc timestamp. POST hiện cho phép ngày trong tương lai;
+  khi chưa tới ngày vào lớp, DELETE nghỉ lớp trả 400.
 - Chỉ nhận hai trường trên. Các trường khác như `teacherId`, `classId`, `status`,
   `leftAt`, `id` hoặc timestamps trả 400.
 - Backend lấy `userId` từ middleware xác thực, kiểm tra cả Class và Student
@@ -147,7 +168,13 @@ vào ngày 2026-10-06 (UTC), thành công trả HTTP 200:
 
 ## Kiểm tra
 
-Chạy `npx tsc --noEmit` và `npm run test:enrollments`. Test cần database đã
+OpenAPI Enrollment nằm ở `src/docs/enrollment.openapi.ts`, ghép paths/schemas
+và tag trong `src/docs/openapi.ts`. Khi đổi contract, đối chiếu route, Zod,
+controller/serializer và service/repository rồi cập nhật cả Swagger và guide.
+
+Chạy `npx tsc --noEmit`, `npm run test:docs` và `npm run test:enrollments`.
+Test docs kiểm tra OpenAPI/schema/$ref, HTTP docs/assets và ba request thiếu
+token trả 401; không ghi database. Test Enrollment cần database đã
 migrate, tự tạo hai tài khoản ACTIVE, Class/Student và Enrollment fixture rồi
 dọn đúng các fixture đó. Test kiểm tra ownership A/B, validation, access token,
 Student tham gia nhiều lớp và hai request ghi danh trùng chạy đồng thời. Test
@@ -156,4 +183,5 @@ lồng nhau không vượt phạm vi tài khoản.
 Test DELETE kiểm tra ownership, ngày nghỉ, giữ lịch sử, gọi lặp/đồng thời,
 ghi danh tương lai, lớp khác không bị ảnh hưởng và không thể ghi đè dữ liệu từ body.
 
-Chạy các bộ integration test lần lượt vì cùng sử dụng database của dự án.
+Chạy các bộ integration test có ghi dữ liệu lần lượt vì cùng sử dụng database
+của dự án.

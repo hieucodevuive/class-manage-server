@@ -5,6 +5,15 @@ Mọi endpoint yêu cầu `Authorization: Bearer <accessToken>` và role `TEACHE
 Backend lấy `userId` từ access token đã xác thực để xác định chủ sở hữu. ID Class
 là số nguyên dương tự tăng, không dùng UUID.
 
+Swagger cho 5 API CRUD Class nằm trong nhóm **Classes** tại `/api/docs/`.
+OpenAPI JSON ở `/api/docs/openapi.json`. Đăng nhập rồi nhập access token vào
+**Authorize → bearerAuth**, không thêm tiền tố `Bearer`; hướng dẫn chung ở
+[swagger-auth.md](swagger-auth.md). Ví dụ dùng cổng 5000:
+[mở Swagger UI](http://localhost:5000/api/docs/).
+
+Các API ghi danh/lịch học dưới đường dẫn Class sẽ được bổ sung Swagger ở
+bước tài liệu của module tương ứng.
+
 ## POST /api/classes
 
 Body tối thiểu:
@@ -46,6 +55,8 @@ search/filter/pagination hoặc total/count.
 
 Thành công: 200, `{ "success": true, "data": { "class": ... } }`.
 ID sai: 400. ID hợp lệ nhưng không tồn tại hoặc thuộc tài khoản khác: 404.
+ID trên đường dẫn chỉ gồm chữ số, giá trị từ 1 đến 2147483647. Theo validation
+hiện có, số 0 ở đầu được chấp nhận (ví dụ `00042` được hiểu là ID 42).
 
 ## PATCH /api/classes/:id
 
@@ -87,6 +98,8 @@ Enrollment, kể cả trạng thái `LEFT`, trả 409 và giữ nguyên lớp c�
 ```
 
 Khóa ngoại `RESTRICT` cũng chặn xóa khi Enrollment được tạo đồng thời.
+Nếu lớp chưa có Enrollment được xóa thành công, lịch học của lớp cũng bị xóa
+theo khóa ngoại `CASCADE`. Khi bị chặn 409, lớp, lịch và lịch sử được giữ lại.
 
 ## Định dạng Class trong response
 
@@ -110,16 +123,24 @@ POST, GET danh sách, GET chi tiết và PATCH dùng cùng một định dạng:
 ```
 
 Học phí luôn là chuỗi Decimal với 2 chữ số phần lẻ. Ngày học là YYYY-MM-DD;
-timestamps là ISO UTC. Chưa trả studentCount/schedules vì các model tương ứng
-chưa được triển khai. Response hiện không trả `teacherId`.
+timestamps là ISO UTC. Response hiện không trả `teacherId`, studentCount,
+schedules hoặc các quan hệ lồng nhau.
 
 ## Lỗi và kiểm tra
 
 Thiếu/sai/hết hạn access token: 401. Role không được phép: 403 theo middleware
-hiện có. Input schema sai: 400 với success/message và errors theo field;
+hiện có; tài khoản PENDING cũng trả 403 khi dùng access token. Input schema
+sai: 400 với success/message và errors theo field;
 lỗi toàn body dùng field `body`. Không có lớp: 404. Xóa lớp đã có Enrollment: 409.
 
 Chạy `npx tsc --noEmit` và `npm run test:classes`.
 Test cần .env, database đã migrate và tài khoản đã seed. Test tự mở server ở
 port tạm, tạo thêm một tài khoản TEACHER để kiểm tra cách ly A/B, rồi chỉ xóa
 fixture của lượt test; không reset database hoặc sửa/xóa lớp có sẵn.
+Chạy `npm run test:docs` để kiểm tra OpenAPI/schema/$ref, assets Swagger và
+HTTP thiếu xác thực của từng endpoint đã mô tả.
+
+Tài liệu Swagger của Class ở `src/docs/class.openapi.ts`, được ghép vào
+`src/docs/openapi.ts`. Khi đổi contract Class, cập nhật cả Swagger và tài liệu
+này theo route, validation, controller/serializer hiện có. Schema dùng cú
+pháp [OpenAPI 3.0.4](https://spec.openapis.org/oas/v3.0.4.html).

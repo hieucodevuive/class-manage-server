@@ -1,5 +1,15 @@
 # Student API
 
+Swagger cho 5 API CRUD Student nằm trong nhóm **Students** tại `/api/docs/`;
+OpenAPI JSON ở `/api/docs/openapi.json`. Đăng nhập rồi nhập access token vào
+**Authorize → bearerAuth**, không thêm tiền tố `Bearer`; hướng dẫn chung ở
+[swagger-auth.md](swagger-auth.md). Ví dụ backend cổng 5000:
+[mở Swagger UI](http://localhost:5000/api/docs/).
+
+Mọi API yêu cầu tài khoản ACTIVE, role TEACHER hoặc ADMIN và chỉ thao tác
+trên hồ sơ thuộc chính người đăng nhập, kể cả ADMIN. Student là hồ sơ độc
+lập; việc ghi danh vào lớp dùng API Enrollment.
+
 ## POST /api/students
 
 Yêu cầu `Authorization: Bearer <accessToken>` và role `TEACHER` hoặc `ADMIN`.
@@ -25,6 +35,11 @@ Body tối thiểu:
 - `status`: `ACTIVE` hoặc `INACTIVE`; không gửi thì mặc định `ACTIVE` tại API.
 - Các field ngoài schema, gồm `id`, `teacherId`/`teacher_id`, `classId` và
   timestamps, bị loại bỏ. ID Student là UUID do Prisma tạo.
+
+Các chuỗi trên được trim hai đầu. `phone`, `parentPhone`, `parentName` và
+`school` không nhận chuỗi rỗng/chỉ có khoảng trắng; dùng null hoặc bỏ qua
+khi tạo nếu chưa có giá trị. `address` và `note` nhận chuỗi rỗng và không tự
+chuyển nó thành null. `dateOfBirth` hiện chưa có điều kiện chặn ngày tương lai.
 
 Thành công: HTTP 201, giữ cấu trúc response hiện có:
 
@@ -54,7 +69,7 @@ Thành công: HTTP 201, giữ cấu trúc response hiện có:
 
 Response không trả `teacherId`. `dateOfBirth` là `YYYY-MM-DD`, timestamps là ISO
 UTC. Body sai trả 400 với `success`, `message`, `errors` theo field. Thiếu/sai
-access token trả 401; role không được phép trả 403 theo middleware hiện có.
+access token trả 401; tài khoản PENDING trả 403 theo middleware hiện có.
 
 ## GET /api/students
 
@@ -80,7 +95,9 @@ search, filter, pagination hoặc total.
 ## GET /api/students/:id
 
 Yêu cầu `Authorization: Bearer <accessToken>` và role `TEACHER` hoặc `ADMIN`.
-`id` phải là UUID. Backend tìm học sinh theo cả `id` và `teacher_id` của tài khoản
+`id` phải có dạng UUID 36 ký tự (hex `8-4-4-4-12`), chấp nhận chữ hoa/thường.
+Validation hiện không ràng buộc version/variant UUID. Backend tìm học sinh
+theo cả `id` và `teacher_id` của tài khoản
 đã xác thực. Thành công trả HTTP 200 với `data.student` cùng định dạng response
 của POST. ID sai định dạng trả 400; ID không tồn tại hoặc thuộc giáo viên khác
 đều trả 404 `Không tìm thấy học sinh`. Thiếu/sai access token trả 401.
@@ -116,3 +133,14 @@ thái `LEFT`, trả 409 và giữ nguyên hồ sơ cùng lịch sử:
 ```
 
 Khóa ngoại `RESTRICT` cũng chặn xóa khi Enrollment được tạo đồng thời.
+
+## Cập nhật và kiểm tra tài liệu
+
+`src/docs/student.openapi.ts` mô tả body, response và mã lỗi, được ghép trong
+`src/docs/openapi.ts`. Khi đổi contract Student, cập nhật Swagger và tài liệu
+này theo route, Zod, controller/serializer, service/repository hiện có.
+
+Chạy TypeScript, `npm run test:docs` và `npm run test:students`. Test docs
+kiểm tra OpenAPI/schema/$ref, HTTP JSON/UI/assets, contract và request thiếu
+xác thực; không ghi database. Các test Student dùng PostgreSQL và tạo/dọn
+fixture riêng theo cơ chế hiện có.

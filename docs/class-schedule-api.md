@@ -3,6 +3,28 @@
 Hiện đã triển khai đủ năm API tạo, lấy danh sách, lấy chi tiết, sửa và xóa lịch học theo tuần.
 Mỗi bản ghi là một khung giờ trong một ngày của tuần và thuộc một Class.
 
+## Xem và gọi thử bằng Swagger
+
+Mở `/api/docs/` trên host/cổng backend, chọn nhóm **ClassSchedules**. Với
+backend cổng 5000, địa chỉ là `http://localhost:5000/api/docs/`. JSON OpenAPI
+ở `/api/docs/openapi.json`, mô tả đủ năm API lịch học bên dưới.
+
+Đăng nhập rồi nhập access token vào **Authorize → bearerAuth**, không thêm
+tiền tố `Bearer`. `classId` lấy từ API Class, còn `scheduleId` lấy từ
+`data.schedule.id` hoặc `data.schedules[].id`. Swagger mô tả đúng quyền của
+tài khoản ACTIVE và phạm vi lớp của người đăng nhập, kể cả ADMIN.
+
+| API | Mục đích | Response thành công |
+| --- | --- | --- |
+| `POST /api/classes/:classId/schedules` | Tạo một khung giờ học | 201, `data.schedule` |
+| `GET /api/classes/:classId/schedules` | Xem lịch theo thứ và giờ | 200, `data.schedules` |
+| `GET /api/classes/:classId/schedules/:scheduleId` | Xem một lịch trong lớp | 200, `data.schedule` |
+| `PATCH /api/classes/:classId/schedules/:scheduleId` | Sửa một hoặc nhiều trường | 200, `data.schedule` |
+| `DELETE /api/classes/:classId/schedules/:scheduleId` | Xóa hẳn một lịch | 200, `success`/`message` |
+
+POST/PATCH/DELETE trong **Try it out** thay đổi dữ liệu thật. Dùng lớp/lịch thử
+của bạn; quyền sở hữu lấy từ tài khoản đã đăng nhập.
+
 ## POST /api/classes/:classId/schedules
 
 Yêu cầu `Authorization: Bearer <accessToken>` và role `TEACHER` hoặc `ADMIN`.
@@ -23,8 +45,8 @@ Trong Postman, chọn Body → raw → JSON:
   `THURSDAY`, `FRIDAY`, `SATURDAY`, `SUNDAY`.
 - Giờ là chuỗi `HH:mm` hoặc `HH:mm:ss`, dùng giờ 00–23, phút/giây 00–59 và đủ
   hai chữ số mỗi phần. Ví dụ `19:00` được chuẩn hóa thành `19:00:00`.
-- Không nhận số, ngày đầy đủ, múi giờ, phần thập phân hoặc khoảng trắng trong giờ.
-  `24:00` không được nhận bởi API.
+- Định dạng giờ hỗ trợ không gồm số, ngày đầy đủ, múi giờ, phần thập phân hoặc
+  khoảng trắng. `24:00` không được nhận bởi API.
 - `endTime` phải sau `startTime`, trong cùng ngày. Giờ bằng nhau, đảo ngược hoặc
   lịch đi qua nửa đêm trả 400 tại field `endTime`.
 - Body chỉ nhận ba trường trên. Các trường khác như `classId`, `teacherId`,
@@ -300,7 +322,13 @@ Thành công trả HTTP 200 theo convention DELETE hiện có:
 
 ## Kiểm tra
 
-Chạy `npx tsc --noEmit` và `npm run test:schedules`.
+OpenAPI nằm trong `src/docs/schedule.openapi.ts`, ghép paths/schemas và tag
+trong `src/docs/openapi.ts`. Khi đổi contract, đối chiếu Zod, route,
+controller/serializer và service/repository rồi cập nhật cả Swagger và guide.
+
+Chạy `npx tsc --noEmit`, `npm run test:docs` và `npm run test:schedules`.
+Test docs kiểm tra OpenAPI/schema/$ref, response/giờ và request thiếu token;
+không ghi database.
 Test dùng database thật, tự tạo tài khoản ACTIVE A/B/ADMIN và tài khoản PENDING,
 Class và lịch học fixture; chỉ dọn fixture của test, không reset DB.
 Kiểm tra quyền sở hữu, đăng nhập, validation, định dạng giờ/response và dữ liệu
@@ -335,5 +363,5 @@ giả mạo, xóa lặp và hai request xóa đồng thời (một 200/một 404
 LEFT vẫn xóa được lịch, giữ nguyên Class/Student/Enrollment và các lịch còn lại.
 Toàn bộ fixture đã được dọn.
 
-ClassSchedule CRUD cơ bản đã có đủ năm endpoint. Payment là phase tiếp theo,
-schema/migration và từng API sẽ được thực hiện ở các bước riêng khi người dùng đồng ý.
+ClassSchedule CRUD cơ bản đã có đủ năm endpoint. Payment hiện cũng đã có
+schema và bốn API; xem [payment-api.md](payment-api.md).

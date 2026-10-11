@@ -3,6 +3,7 @@ import cors from 'cors';
 import type { ErrorRequestHandler } from 'express';
 import cookieParser from 'cookie-parser';
 import { env } from './config/env';
+import docsRouter from './docs/docs.route';
 
 import authRouter from './modules/auth/auth.route';
 import classRouter from './modules/classes/class.route';
@@ -21,6 +22,7 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
+app.use('/api/docs', docsRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/classes', classRouter);
 app.use('/api/students', studentRouter);

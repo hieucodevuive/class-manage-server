@@ -378,3 +378,121 @@ Business routes tiếp tục dùng middleware auth/role hiện có. Vai trò `AD
 - Test dùng fixture và cleanup/rollback hiện có. Kết quả chi tiết ở mục 10
   của `docs/backend-status-report.md`; các giới hạn coverage vẫn được giữ.
   Đã chốt bộ test hiện có, dừng và chờ người dùng chọn bước tiếp theo.
+
+## 17. Swagger và tài liệu Auth cho frontend (2026-10-10)
+
+- Sau khi người dùng đồng ý bắt đầu, thêm Swagger UI tại `/api/docs/` và
+  OpenAPI JSON tại `/api/docs/openapi.json`. Bước này chỉ viết tài liệu cho
+  7 API Auth hiện có; chưa bổ sung Swagger cho các module nghiệp vụ.
+- Tài liệu OpenAPI 3.0.4 nằm trong `src/docs/`, mô tả request, response, lỗi,
+  quyền ADMIN/ACTIVE, Bearer access token và HttpOnly refresh cookie.
+  Server `/api` dùng host/cổng hiện tại; assets local, credentials bật,
+  không lưu Bearer qua reload, không dùng validator online.
+- Hướng dẫn FE và cách thử API: `docs/swagger-auth.md`. Contract/runtime Auth,
+  ownership, database và luồng đăng ký/duyệt/refresh/logout được giữ nguyên.
+- TypeScript src và typecheck riêng test docs đạt. Docs 1/1, HTTP 1/1,
+  Auth 5/5 và E2E 1/1 đều đạt; tổng 8/8, không fail/skipped/cancelled.
+  Docs không ghi DB; Auth/E2E tạo và dọn fixture hiện có. Không chạy lại toàn
+  bộ 28 test trong lượt này; kết quả tổng kiểm tra trước ở mục 16.
+- Không kiểm tra trực tiếp render/Try it out trong trình duyệt vì quyền mở
+  địa chỉ preview bị từ chối. Đã dừng server preview riêng; chi tiết kết quả
+  và giới hạn ở mục 11 `docs/backend-status-report.md`.
+- Bước Swagger tiếp theo do người dùng xác nhận; dừng sau tài liệu Auth.
+
+## 18. Swagger cho Class (2026-10-10)
+
+- Sau khi người dùng gửi `Next`, thêm `src/docs/class.openapi.ts` cho đúng
+  5 API CRUD Class. `src/docs/openapi.ts` ghép paths/schemas/tag Classes;
+  `/api/docs/` và JSON vào cuối lượt này mô tả 12 operation Auth/Class trên 9 path.
+- Tài liệu bám validation/serializer/ownership hiện có: ID Int (có thể có
+  số 0 đầu trong URL), 6 field POST bắt buộc, default ACTIVE chỉ ở POST,
+  PATCH partial/nullable, tiền nhận number/string và trả chuỗi 2 số lẻ,
+  ngày/timestamps, ngoài ownership 404, Enrollment ACTIVE/LEFT chặn xóa 409.
+  Response Class có 12 field, không teacherId/studentCount/quan hệ lồng nhau.
+- Cập nhật `docs/class-api.md`, phạm vi `docs/swagger-auth.md` và test docs.
+  Chưa đưa Enrollment/Schedule vào nhóm Class Swagger; các module đó được
+  viết tài liệu theo bước riêng. Không thay đổi CRUD/runtime/database.
+- TypeScript src và typecheck riêng test docs đều đạt. Docs 1/1 và Class
+  2/2 trên PostgreSQL đạt, tổng 3/3, không fail/skipped/cancelled; exit code 0.
+  Docs không ghi DB; Class tạo/dọn fixture theo cơ chế hiện có. Không chạy
+  lại toàn bộ bộ test; kết quả cũ vẫn được ghi theo từng lượt.
+- Chưa kiểm tra render/Try it out trong trình duyệt vì quyền mở preview bị
+  từ chối ở lượt trước. Chi tiết ở mục 12 `docs/backend-status-report.md`.
+- Bước Swagger tiếp theo là Student; dừng và chờ người dùng xác nhận.
+
+## 19. Swagger cho Student (2026-10-10)
+
+- Sau khi người dùng gửi `Next`, thêm `src/docs/student.openapi.ts` cho đúng
+  5 API CRUD Student. Ghép paths/schemas/tag Students trong OpenAPI chung;
+  `/api/docs/` và JSON vào cuối lượt này mô tả 17 operation Auth/Class/Student
+  trên 11 path.
+- Đối chiếu source hiện có: ID UUID hex 36 ký tự, input 10 field (chỉ fullName
+  bắt buộc ở POST), status ACTIVE chỉ mặc định tại POST, PATCH partial và
+  8 field nullable. Field lạ bị strip; không thay ownership, ID hoặc classId.
+  Phân biệt null/chuỗi rỗng, kiểm phone/grade/ngày sinh theo validation hiện có.
+- Response có 13 field và không có teacherId/lớp lồng nhau; ngày sinh DATE
+  hoặc null, timestamps ISO UTC. List có thứ tự createdAt/id giảm dần và chưa
+  có search/filter/pagination/count. UUID ngoài ownership trả 404 kể cả ADMIN;
+  mọi Enrollment ACTIVE/LEFT chặn xóa Student bằng 409 để giữ lịch sử.
+- Cập nhật `docs/student-api.md`, `docs/swagger-auth.md` và test docs.
+  TypeScript src/test docs đều đạt. Docs 1/1 và Student 5/5 trên PostgreSQL
+  đạt, tổng 6/6, không fail/skipped/cancelled; exit code đều 0.
+  Docs không ghi DB; Student dùng fixture và cleanup hiện có.
+- Chỉ thêm tài liệu/kiểm tra; không đổi API/runtime/database/dependencies.
+  Không chạy lại toàn bộ bộ test. Chưa kiểm tra render/Try it out trong trình
+  duyệt vì quyền mở preview bị từ chối ở lượt trước. Chi tiết ở mục 13
+  `docs/backend-status-report.md`.
+- Bước Swagger tiếp theo là Enrollment; dừng và chờ người dùng xác nhận.
+
+## 20. Swagger cho Enrollment (2026-10-10)
+
+- Sau khi người dùng gửi `Next`, thêm `src/docs/enrollment.openapi.ts` cho
+  3 API ghi danh, danh sách và nghỉ lớp hiện có. Ghép paths/schemas/tag
+  Enrollments trong tài liệu chung; `/api/docs/` và JSON vào cuối lượt này mô tả 20 operation
+  Auth/Class/Student/Enrollment trên 13 path.
+- POST strict chỉ nhận studentId và joinedAt bắt buộc, không mặc định ngày;
+  field lạ trả 400. Class ID Int, Student UUID, joinedAt DATE có thể ở tương lai.
+  Class/Student phải cùng thuộc người gọi; cặp đã tồn tại ACTIVE/LEFT trả 409.
+  DTO base có 8 field; GET thêm Student 13 field cùng ownership, không teacherId.
+  GET gồm ACTIVE/LEFT, createdAt/id giảm dần, lớp rỗng trả [], chưa có filter/count.
+- DELETE là nghỉ lớp, giữ lịch sử Enrollment/Payment: đổi ACTIVE sang LEFT,
+  leftAt ngày server UTC. Body không dùng; LEFT gọi lại giữ leftAt/updatedAt;
+  ACTIVE có joinedAt tương lai trả 400. Ngoài phạm vi trả 404 kể cả ADMIN.
+- Cập nhật `docs/enrollment-api.md`, `docs/swagger-auth.md` và test docs.
+  TypeScript src/test docs đều đạt; Docs 1/1 và Enrollment 3/3 trên PostgreSQL
+  đạt, tổng 4/4, không fail/skipped/cancelled; exit code đều 0.
+  Docs không ghi DB, Enrollment tạo/dọn đúng fixture theo cơ chế hiện có.
+- Chỉ bổ sung tài liệu/kiểm tra, không đổi API nghiệp vụ/schema/dependencies
+  hoặc reset DB; không chạy lại toàn bộ bộ test. Chưa kiểm tra render/Try it out
+  trong trình duyệt vì quyền mở preview bị từ chối ở lượt trước.
+  Chi tiết ở mục 14 `docs/backend-status-report.md`.
+- Bước Swagger tiếp theo là ClassSchedule; dừng và chờ người dùng xác nhận.
+
+## 21. Hoàn tất Swagger ClassSchedule và Payment (2026-10-10)
+
+- Người dùng cho phép bổ sung tất cả phần Swagger còn lại trong một lượt.
+  Thêm `src/docs/schedule.openapi.ts` (5 API) và `src/docs/payment.openapi.ts`
+  (4 API), ghép paths/schemas/tags ClassSchedules/Payments trong tài liệu chung.
+  Swagger và JSON hiện mô tả đủ 29 operation trên 17 path của toàn bộ module.
+- Lịch học: body strict 3 field, POST bắt buộc/PATCH partial; giờ nhận HH:mm
+  hoặc HH:mm:ss và trả HH:mm:ss. PATCH ghép giờ DB rồi kiểm endTime > startTime,
+  CHECK vẫn bảo vệ cập nhật đồng thời; DTO 7 field. Quyền qua Class, khác lớp
+  hoặc ngoài ownership trả 404; DELETE chỉ xóa lịch, giữ dữ liệu cha/lịch sử.
+- Học phí: body strict, billingPeriod nhận ngày rồi chuẩn hóa đầu tháng;
+  amountDue snapshot, tiền trả chuỗi hai số lẻ. POST DTO 10 field, GET/PATCH
+  11 field có status tính bằng Decimal; khoản 0/0 thuộc PAID với paidAt null.
+  List chỉ nhận 4 query AND, kiểm ownership Class cùng Student qua Enrollment.
+  PATCH thay tổng amountPaid, kiểm phương thức sau ghép, tính paidAt server và
+  phát hiện snapshot đổi bằng 409. Giữ quyết định không mở DELETE Payment.
+- Mở rộng `tests/docs.integration.test.ts`: 29 operation/17 path, 1 top-level
+  test, thêm contract/nullable/Decimal/time/filter và 9 request thiếu token401;
+  giữ kiểm tra Auth/Class/Student/Enrollment, CORS/assets/$ref/404.
+  Cập nhật `docs/class-schedule-api.md`, `docs/payment-api.md`, phạm vi và
+  bảng hướng dẫn các nhóm API trong `docs/swagger-auth.md`.
+- TypeScript src và test docs đều đạt; Docs1/1, Schedule5/5, Payment4/4,
+  tổng 10/10, không fail/skipped/cancelled; exit code đều 0. Docs không ghi DB,
+  hai bộ database chạy lần lượt và dọn đúng fixture theo cơ chế hiện có.
+  Không chạy lại toàn bộ bộ test, không đổi runtime/schema/dependencies.
+- Chưa kiểm tra render/Try it out trong trình duyệt vì quyền mở preview bị
+  từ chối ở lượt trước; chi tiết kết quả ở mục 15 `docs/backend-status-report.md`.
+  Tài liệu đã hoàn tất cho tất cả API hiện có; dừng sau lượt này.
