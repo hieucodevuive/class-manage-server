@@ -23,7 +23,7 @@ export function insertPendingTeacher(email: string, passwordHash: string) {
       role: 'TEACHER',
       status: 'PENDING',
     },
-    select: { id: true, email: true, name: true, role: true },
+    select: { id: true, email: true, name: true, avatar: true, role: true },
   });
 }
 
@@ -31,7 +31,7 @@ export function findPendingRegistrations() {
   return prisma.user.findMany({
     where: { role: 'TEACHER', status: 'PENDING' },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    select: { id: true, email: true, name: true, role: true, status: true, createdAt: true },
+    select: { id: true, email: true, name: true, avatar: true, role: true, status: true, createdAt: true },
   });
 }
 
@@ -40,7 +40,7 @@ export async function activatePendingTeacher(id: number) {
     return await prisma.user.update({
       where: { id, role: 'TEACHER', status: 'PENDING' },
       data: { status: 'ACTIVE' },
-      select: { id: true, email: true, name: true, role: true, status: true },
+      select: { id: true, email: true, name: true, avatar: true, role: true, status: true },
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
@@ -64,6 +64,7 @@ export function findUserById(id: number) {
       id: true,
       email: true,
       name: true,
+      avatar: true,
       role: true,
     },
   });
@@ -81,7 +82,7 @@ export async function updateUserName(id: number, name: string) {
     return await prisma.user.update({
       where: { id, status: 'ACTIVE' },
       data: { name },
-      select: { id: true, email: true, name: true, role: true },
+      select: { id: true, email: true, name: true, avatar: true, role: true },
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
@@ -116,6 +117,7 @@ export function findRefreshTokenByHash(tokenHash: string) {
           id: true,
           email: true,
           name: true,
+          avatar: true,
           role: true,
           status: true,
         },
@@ -147,4 +149,21 @@ export function deleteRefreshTokenByHash(tokenHash: string) {
   return prisma.refreshToken.deleteMany({
     where: { tokenHash },
   });
+}
+
+export function findUserAvatarState(id: number) {
+  return prisma.user.findUnique({ where: { id }, select: { avatar: true, status: true } });
+}
+
+export async function updateUserAvatar(id: number, previousAvatar: string | null, avatar: string) {
+  try {
+    return await prisma.user.update({
+      where: { id, status: 'ACTIVE', avatar: previousAvatar },
+      data: { avatar },
+      select: { id: true, email: true, name: true, avatar: true, role: true },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') return null;
+    throw error;
+  }
 }

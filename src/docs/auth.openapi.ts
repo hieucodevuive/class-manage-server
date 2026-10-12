@@ -40,7 +40,14 @@ const adminForbidden = errorResponse('Tài khoản chưa ACTIVE hoặc không c�
   wrongRole: errorExample('Bạn không có quyền thực hiện thao tác này'),
 });
 
-const publicUserExample = { id: 101, email: 'teacher@example.com', name: 'teacher@example.com', role: 'TEACHER' };
+const defaultAvatarExample = 'http://localhost:5000/api/assets/default-avatar.svg';
+const avatarResponseField = {
+  type: 'string',
+  format: 'uri',
+  description: 'URL ảnh riêng hiện tại hoặc URL ảnh mặc định chung khi User.avatar trong DB là null. Response luôn là URL tuyệt đối, không trả null. Ảnh riêng được cập nhật qua PATCH /auth/me/avatar.',
+  example: defaultAvatarExample,
+};
+const publicUserExample = { id: 101, email: 'teacher@example.com', name: 'teacher@example.com', avatar: defaultAvatarExample, role: 'TEACHER' };
 const accessTokenExample = 'ACCESS_TOKEN_FROM_LOGIN_OR_REFRESH';
 
 const refreshCookieHeader = {
@@ -139,35 +146,38 @@ export const authSchemas = {
   AuthUser: {
     type: 'object',
     additionalProperties: false,
-    required: ['id', 'email', 'name', 'role'],
-    description: 'User công khai của login/refresh/GET và PATCH me; không có status, avatar hoặc passwordHash. name ban đầu bằng email được lưu; cập nhật tên riêng bằng PATCH /auth/me.',
+    required: ['id', 'email', 'name', 'avatar', 'role'],
+    description: 'User công khai của register/login/refresh/GET me/PATCH tên và avatar; không có status hoặc passwordHash. name ban đầu bằng email được lưu; avatar luôn có URL ảnh riêng hoặc ảnh mặc định chung.',
     properties: {
       id: { type: 'integer', format: 'int32', minimum: 1, example: 101 },
       email: { type: 'string', format: 'email', example: 'teacher@example.com' },
       name: { type: 'string', description: 'Tên hiển thị hiện tại. Ban đầu bằng email được lưu; có thể đổi sau khi tài khoản ACTIVE. Không áp giới hạn PATCH cho tên khởi tạo/backfill từ email cũ.', example: 'teacher@example.com' },
+      avatar: avatarResponseField,
       role: { type: 'string', enum: ['TEACHER', 'ADMIN'] },
     },
   },
   AuthRegisteredUser: {
     type: 'object',
     additionalProperties: false,
-    required: ['id', 'email', 'name', 'role'],
-    description: 'Đăng ký công khai luôn tạo TEACHER/PENDING; name bằng email đã trim/chuyển chữ thường. Response không trả status/avatar.',
+    required: ['id', 'email', 'name', 'avatar', 'role'],
+    description: 'Đăng ký công khai luôn tạo TEACHER/PENDING; name bằng email đã trim/chuyển chữ thường. avatar dùng ảnh mặc định chung. Response không trả status.',
     properties: {
       id: { type: 'integer', format: 'int32', minimum: 1, example: 101 },
       email: { type: 'string', format: 'email', example: 'teacher@example.com' },
       name: { type: 'string', description: 'Tên ban đầu bằng email đã chuẩn hóa; client không gửi name khi đăng ký.', example: 'teacher@example.com' },
+      avatar: avatarResponseField,
       role: { type: 'string', enum: ['TEACHER'] },
     },
   },
   AuthPendingRegistration: {
     type: 'object',
     additionalProperties: false,
-    required: ['id', 'email', 'name', 'role', 'status', 'createdAt'],
+    required: ['id', 'email', 'name', 'avatar', 'role', 'status', 'createdAt'],
     properties: {
       id: { type: 'integer', format: 'int32', minimum: 1, example: 101 },
       email: { type: 'string', format: 'email', example: 'teacher@example.com' },
       name: { type: 'string', description: 'Tên hiển thị hiện tại, ban đầu bằng email được lưu.', example: 'teacher@example.com' },
+      avatar: avatarResponseField,
       role: { type: 'string', enum: ['TEACHER'] },
       status: { type: 'string', enum: ['PENDING'] },
       createdAt: { type: 'string', format: 'date-time', example: '2026-10-10T00:00:00.000Z' },
@@ -176,11 +186,12 @@ export const authSchemas = {
   AuthApprovedRegistration: {
     type: 'object',
     additionalProperties: false,
-    required: ['id', 'email', 'name', 'role', 'status'],
+    required: ['id', 'email', 'name', 'avatar', 'role', 'status'],
     properties: {
       id: { type: 'integer', format: 'int32', minimum: 1, example: 101 },
       email: { type: 'string', format: 'email', example: 'teacher@example.com' },
       name: { type: 'string', description: 'Tên hiển thị được giữ nguyên khi duyệt.', example: 'teacher@example.com' },
+      avatar: avatarResponseField,
       role: { type: 'string', enum: ['TEACHER'] },
       status: { type: 'string', enum: ['ACTIVE'] },
     },
@@ -288,6 +299,37 @@ export const authSchemas = {
     properties: {
       success: { type: 'boolean', enum: [true] },
       message: { type: 'string', enum: ['Cập nhật tên thành công'] },
+      data: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['user'],
+        properties: { user: schemaRef('AuthUser') },
+      },
+    },
+  },
+  AuthUpdateAvatarRequest: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['avatar'],
+    description: 'Multipart strict: một file bắt buộc tên avatar, không có text field hoặc file khác. Không nhận URL ảnh, name, ID tài khoản hoặc JSON. Client tự tạo Content-Type kèm boundary.',
+    properties: {
+      avatar: {
+        type: 'string',
+        format: 'binary',
+        'x-maxBytes': 2097152,
+        'x-maxPixels': 20000000,
+        'x-acceptedMimeTypes': ['image/jpeg', 'image/png', 'image/webp'],
+        description: 'Một file JPEG/PNG/WebP không rỗng, tối đa 2 MiB (2097152 byte), ảnh giải mã tối đa 20 megapixel. Backend kiểm nội dung ảnh khớp MIME, áp EXIF orientation, crop cover thành WebP tĩnh 256×256 chất lượng 80 và bỏ metadata. PNG/WebP động lấy frame đầu. Tên/đuôi file không thay cho validation ảnh.',
+      },
+    },
+  },
+  AuthUpdateAvatarResponse: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['success', 'message', 'data'],
+    properties: {
+      success: { type: 'boolean', enum: [true] },
+      message: { type: 'string', enum: ['Cập nhật avatar thành công'] },
       data: {
         type: 'object',
         additionalProperties: false,
@@ -526,12 +568,12 @@ export const authPaths = {
       tags: ['Auth'],
       operationId: 'authMe',
       summary: 'Đọc thông tin tài khoản đang đăng nhập',
-      description: 'Yêu cầu access JWT hợp lệ và tài khoản đang ACTIVE. Chỉ trả id/email/name/role hiện tại của tài khoản đó; tên đọc từ database, không lấy từ JWT. Body/query không được dùng.',
+      description: 'Yêu cầu access JWT hợp lệ và tài khoản đang ACTIVE. Chỉ trả id/email/name/avatar/role hiện tại của tài khoản đó; tên/ảnh đọc từ database, không lấy từ JWT. Avatar null trong DB dùng ảnh mặc định chung. Body/query không được dùng.',
       security: [{ bearerAuth: [] }],
       responses: {
         ...parserResponses,
         '200': {
-          description: 'Thông tin user hiện tại có name, không có message/status/avatar/passwordHash.',
+          description: 'Thông tin user hiện tại có name/avatar, không có message/status/passwordHash.',
           content: {
             'application/json': {
               schema: schemaRef('AuthMeResponse'),
@@ -551,8 +593,8 @@ export const authPaths = {
         'Yêu cầu access JWT hợp lệ và tài khoản ACTIVE; chỉ cập nhật chính tài khoản được middleware xác thực.',
         'Không nhận ID tài khoản từ URL/body/query, không mở API sửa tên người khác. TEACHER và ADMIN cập nhật tên của mình theo cùng luồng.',
         'Body strict chỉ nhận name bắt buộc; trim hai đầu rồi kiểm từ 1 đến 150 Unicode code point. Không gửi name ở đăng ký: tên ban đầu bằng email được lưu.',
-        'Không đổi email, role, status, mật khẩu, ownership, access token hoặc refresh cookie; avatar chưa được triển khai và field lạ trả 400.',
-        'Thành công trả user hiện tại có id/email/name/role. Tài khoản không còn tồn tại trả 401; PENDING bị middleware chặn 403. Không dùng query.',
+        'Không đổi email, role, status, mật khẩu, avatar, ownership, access token hoặc refresh cookie; đổi ảnh dùng riêng PATCH /auth/me/avatar. Field lạ trả 400.',
+        'Thành công trả user hiện tại có id/email/name/avatar/role. Tài khoản không còn tồn tại trả 401; PENDING bị middleware chặn 403. Không dùng query.',
       ].join(' '),
       security: [{ bearerAuth: [] }],
       requestBody: {
@@ -590,6 +632,80 @@ export const authPaths = {
         },
         '401': bearerUnauthorized,
         '403': accountPending,
+      },
+    },
+  },
+  '/auth/me/avatar': {
+    patch: {
+      tags: ['Auth'],
+      operationId: 'authUpdateAvatar',
+      summary: 'Upload avatar của tài khoản đang đăng nhập',
+      description: [
+        'Yêu cầu Bearer access token hợp lệ và tài khoản ACTIVE trước khi đọc multipart/upload. TEACHER và ADMIN đều chỉ đổi ảnh của chính mình; ID lấy từ middleware xác thực, không từ client.',
+        'Gửi một file tên avatar bằng multipart/form-data; không có text field/file khác, không gửi URL ảnh qua JSON. Client tự thêm Content-Type/boundary.',
+        'Chấp nhận JPEG/PNG/WebP, file tối đa 2 MiB và ảnh giải mã tối đa 20 megapixel. Sau kiểm cấu hình dịch vụ, kiểm ảnh thật khớp MIME rồi xử lý thành WebP tĩnh 256×256 chất lượng 80 (EXIF orientation, crop cover, bỏ metadata); PNG/WebP động lấy frame đầu.',
+        'Thành công lưu URL riêng, trả public User 5 field. User chưa có ảnh riêng dùng URL mặc định chung khi đọc; không chép URL mặc định vào DB.',
+        'Ghi có kiểm ownership/trạng thái và snapshot avatar đã đọc; hai upload đổi cùng snapshot có thể xung đột 409. Tải lại hồ sơ trước khi gửi lại.',
+        'Chưa cấu hình dịch vụ trả 503; Cloudinary upload thất bại trả 502. Lỗi lưu/đối soát DB trả 500: đọc lại GET /auth/me để xác nhận ảnh hiện tại.',
+        'Không thay name/email/role, token hoặc refresh cookie. Query không được dùng; muốn đổi tên dùng PATCH /auth/me với JSON name.',
+      ].join(' '),
+      security: [{ bearerAuth: [] }],
+      requestBody: {
+        required: true,
+        content: {
+          'multipart/form-data': {
+            schema: schemaRef('AuthUpdateAvatarRequest'),
+            encoding: { avatar: { contentType: 'image/jpeg, image/png, image/webp' } },
+          },
+        },
+      },
+      responses: {
+        ...parserResponses,
+        '200': {
+          description: 'Avatar mới đã được lưu; không cấp token hoặc đặt cookie.',
+          content: {
+            'application/json': {
+              schema: schemaRef('AuthUpdateAvatarResponse'),
+              example: {
+                success: true,
+                message: 'Cập nhật avatar thành công',
+                data: { user: { ...publicUserExample, avatar: 'https://res.cloudinary.com/example/image/upload/avatar-example.webp' } },
+              },
+            },
+          },
+        },
+        '400': errorResponse('File thiếu/rỗng, multipart sai/field thêm, ảnh không giải mã được/quá 20 megapixel hoặc nội dung không khớp MIME; JSON parser sai cú pháp cũng trả 400.', {
+          missingFile: errorExample('Vui lòng gửi một file avatar'),
+          malformedMultipart: errorExample('Dữ liệu upload avatar không hợp lệ'),
+          extraField: errorExample('Chỉ gửi một file trong field avatar'),
+          invalidImage: errorExample('File ảnh không hợp lệ'),
+          mimeMismatch: errorExample('Nội dung file không khớp định dạng ảnh'),
+          malformedJson: errorExample('Body JSON không hợp lệ'),
+        }),
+        '401': bearerUnauthorized,
+        '403': accountPending,
+        '409': errorResponse('Avatar thay đổi trong lúc upload/ghi; tải lại hồ sơ rồi thử lại.', {
+          changedAvatar: errorExample('Avatar đã thay đổi, vui lòng tải lại và thử lại'),
+        }),
+        '413': errorResponse('File avatar vượt 2 MiB; JSON body quá giới hạn parser chung cũng có thể trả 413 trước auth.', {
+          tooLargeAvatar: errorExample('Ảnh không được vượt quá 2 MiB'),
+          tooLargeJson: errorExample('Body JSON vượt quá giới hạn cho phép'),
+        }),
+        '415': errorResponse('Không dùng multipart hoặc MIME không được nhận; charset/encoding JSON không được hỗ trợ cũng dùng lỗi parser chung.', {
+          wrongContentType: errorExample('Upload avatar phải dùng multipart/form-data'),
+          unsupportedImage: errorExample('Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP'),
+          unsupportedEncoding: errorExample('Charset hoặc encoding của body không được hỗ trợ'),
+        }),
+        '500': errorResponse('Không thể lưu/đối soát avatar hoặc lỗi máy chủ; đọc lại GET /auth/me để biết ảnh đang lưu.', {
+          saveError: errorExample('Không thể lưu avatar'),
+          serverError: errorExample('Lỗi máy chủ'),
+        }),
+        '502': errorResponse('Cloudinary upload thất bại; không trả raw provider error/credentials.', {
+          uploadFailed: errorExample('Không thể upload avatar, vui lòng thử lại'),
+        }),
+        '503': errorResponse('Backend chưa được cấu hình đủ dịch vụ Cloudinary cho avatar.', {
+          notConfigured: errorExample('Dịch vụ avatar chưa được cấu hình'),
+        }),
       },
     },
   },

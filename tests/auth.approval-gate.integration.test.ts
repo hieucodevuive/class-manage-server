@@ -6,6 +6,7 @@ import type { Server } from 'node:http';
 import { test } from 'node:test';
 import bcrypt from 'bcryptjs';
 import app from '../src/app';
+import { env } from '../src/config/env';
 import { prisma } from '../src/config/prisma';
 import { createAccessToken } from '../src/utils/jwt';
 import { hashRefreshToken } from '../src/utils/refresh-token';
@@ -15,13 +16,16 @@ test('Tài khoản PENDING không thể đăng nhập, refresh hoặc dùng acce
   const userIds: number[] = [];
   const prefix = `auth-gate-test-${randomUUID()}`;
   const password = 'Test-password-123!';
+  const defaultAvatar = env.DEFAULT_AVATAR_URL ?? new URL('/api/assets/default-avatar.svg',
+    env.PUBLIC_API_ORIGIN ?? `http://localhost:${env.PORT}`).href;
 
   function assertPublicUser(actual: unknown, expected: { id: number; email: string; name: string }) {
     assert.ok(actual !== null && typeof actual === 'object' && !Array.isArray(actual), 'User phải là object công khai');
     const user = actual as Record<string, unknown>;
-    assert.ok(Object.keys(user).sort().join('|') === 'email|id|name|role', 'User chỉ trả bốn field công khai');
+    assert.ok(Object.keys(user).sort().join('|') === 'avatar|email|id|name|role', 'User chỉ trả năm field công khai');
     assert.ok(user.id === expected.id && user.email === expected.email && user.name === expected.name
       && user.role === 'TEACHER', 'Response phải đúng tài khoản fixture');
+    assert.ok(user.avatar === defaultAvatar, 'User chưa có ảnh riêng phải trả avatar mặc định');
   }
 
   try {
@@ -69,11 +73,10 @@ test('Tài khoản PENDING không thể đăng nhập, refresh hoặc dùng acce
     const wrongPassword = await login(pending.email, 'wrong-password');
     assert.equal(wrongPassword.status, 401);
     const deniedLogin = await login(pending.email, password);
-    assert.deepEqual(deniedLogin, {
-      status: 403,
-      body: { success: false, message: 'Tài khoản đang chờ duyệt' },
-      cookie: null,
-    });
+    assert.equal(deniedLogin.status, 403);
+    assert.ok(Object.keys(deniedLogin.body).sort().join('|') === 'message|success', 'PENDING login chỉ trả envelope lỗi');
+    assert.ok(deniedLogin.body.success === false && deniedLogin.body.message === 'Tài khoản đang chờ duyệt', 'Login phải chặn PENDING');
+    assert.ok(deniedLogin.cookie === null, 'Login PENDING không được cấp cookie');
 
     const pendingAccessToken = createAccessToken({ id: pending.id, role: 'TEACHER' });
     for (const path of ['/api/auth/me', '/api/classes', '/api/students']) {
@@ -81,10 +84,9 @@ test('Tài khoản PENDING không thể đăng nhập, refresh hoặc dùng acce
         headers: { Authorization: `Bearer ${pendingAccessToken}` },
       });
       assert.equal(response.status, 403, path);
-      assert.deepEqual(await response.json(), {
-        success: false,
-        message: 'Tài khoản đang chờ duyệt',
-      });
+      const body = await response.json();
+      assert.ok(Object.keys(body).sort().join('|') === 'message|success', 'PENDING chỉ được trả envelope lỗi');
+      assert.ok(body.success === false && body.message === 'Tài khoản đang chờ duyệt', 'PENDING không được dùng access token');
     }
 
     const pendingRefreshToken = randomUUID();
@@ -101,7 +103,7 @@ test('Tài khoản PENDING không thể đăng nhập, refresh hoặc dùng acce
     });
     assert.equal(deniedRefresh.status, 401);
     assert.equal((await deniedRefresh.json()).success, false);
-    assert.equal(deniedRefresh.headers.get('set-cookie'), null);
+    assert.ok(deniedRefresh.headers.get('set-cookie') === null, 'Refresh PENDING không được cấp cookie');
 
     const activeLogin = await login(active.email, password);
     assert.equal(activeLogin.status, 200);

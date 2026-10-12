@@ -6,6 +6,7 @@ import type { Server } from 'node:http';
 import { test } from 'node:test';
 import bcrypt from 'bcryptjs';
 import app from '../src/app';
+import { env } from '../src/config/env';
 import { prisma } from '../src/config/prisma';
 
 test('Luồng HTTP đăng ký, duyệt, quản lý lớp, thu học phí và nghỉ lớp giữ ownership/lịch sử', { timeout: 60000 }, async () => {
@@ -17,6 +18,8 @@ test('Luồng HTTP đăng ký, duyệt, quản lý lớp, thu học phí và ngh
     b: `${prefix}-b@example.test`,
   };
   const password = 'Workflow-test-password-123!';
+  const defaultAvatar = env.DEFAULT_AVATAR_URL ?? new URL('/api/assets/default-avatar.svg',
+    env.PUBLIC_API_ORIGIN ?? `http://localhost:${env.PORT}`).href;
   const setupDay = new Date().toISOString().slice(0, 10);
   const joinedAt = new Date(new Date(`${setupDay}T00:00:00.000Z`).getTime() - 86400000)
     .toISOString().slice(0, 10);
@@ -64,9 +67,10 @@ test('Luồng HTTP đăng ký, duyệt, quản lý lớp, thu học phí và ngh
     }
 
     function publicUser(user: Record<string, unknown>, id: number, email: string, role: string) {
-      assert.deepEqual(Object.keys(user).sort(), ['email', 'id', 'name', 'role']);
+      assert.deepEqual(Object.keys(user).sort(), ['avatar', 'email', 'id', 'name', 'role']);
       // Boolean assertions tránh in giá trị bí mật nếu response Auth bị hồi quy.
       assert.ok(user.id === id && user.email === email && user.name === email && user.role === role, 'Thông tin User công khai phải khớp fixture');
+      assert.ok(user.avatar === defaultAvatar, 'User trong workflow chưa có ảnh riêng phải trả URL mặc định');
     }
 
     async function register(email: string) {
@@ -78,9 +82,10 @@ test('Luồng HTTP đăng ký, duyệt, quản lý lớp, thu học phí và ngh
       assert.ok(Number.isInteger(id) && id > 0, 'Register phải trả User ID hợp lệ');
       publicUser(response.body.data.user, id, email, 'TEACHER');
       assert.ok(response.cookie === null, 'Register không được cấp refresh cookie');
-      const stored = await prisma.user.findUniqueOrThrow({ where: { id }, select: { role: true, status: true, name: true } });
+      const stored = await prisma.user.findUniqueOrThrow({ where: { id }, select: { role: true, status: true, name: true, avatar: true } });
       assert.ok(stored.role === 'TEACHER' && stored.status === 'PENDING' && stored.name === email,
         'Đăng ký phải lưu TEACHER/PENDING với name bằng email');
+      assert.ok(stored.avatar === null, 'Workflow đăng ký phải giữ avatar null trong DB');
       const denied = await request('/auth/login', 'POST', undefined, { email, password });
       assert.equal(denied.status, 403);
       assert.ok(denied.body.success === false && denied.body.data === undefined, 'PENDING không được cấp token');
@@ -109,13 +114,15 @@ test('Luồng HTTP đăng ký, duyệt, quản lý lớp, thu học phí và ngh
     for (const id of [idA, idB]) {
       const registration = pending.data.users.find((user: { id: number }) => user.id === id);
       assert.ok(registration, 'ADMIN phải thấy đăng ký fixture đang chờ duyệt');
-      assert.deepEqual(Object.keys(registration).sort(), ['createdAt', 'email', 'id', 'name', 'role', 'status']);
+      assert.deepEqual(Object.keys(registration).sort(), ['avatar', 'createdAt', 'email', 'id', 'name', 'role', 'status']);
       assert.ok(registration.status === 'PENDING' && registration.role === 'TEACHER');
       assert.ok(registration.name === registration.email, 'Danh sách chờ duyệt phải giữ name ban đầu');
+      assert.ok(registration.avatar === defaultAvatar, 'Danh sách chờ duyệt phải có avatar mặc định');
       const approval = await expectRequest(`/auth/registrations/${id}/approve`, 'PATCH', adminToken);
-      assert.deepEqual(Object.keys(approval.data.user).sort(), ['email', 'id', 'name', 'role', 'status']);
+      assert.deepEqual(Object.keys(approval.data.user).sort(), ['avatar', 'email', 'id', 'name', 'role', 'status']);
       assert.ok(approval.data.user.id === id && approval.data.user.status === 'ACTIVE');
       assert.ok(approval.data.user.name === registration.name, 'Duyệt không được thay name');
+      assert.ok(approval.data.user.avatar === defaultAvatar, 'Duyệt không được thay avatar chưa có ảnh riêng');
     }
     const tokenA = await login(idA, emails.a, 'TEACHER');
     const tokenB = await login(idB, emails.b, 'TEACHER');

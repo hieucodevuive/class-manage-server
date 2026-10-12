@@ -16,7 +16,7 @@ Tài liệu này cập nhật giả định một giáo viên ở `backend-imple
 
 | Bảng logic | Danh sách trường |
 | --- | --- |
-| users | Giữ schema authentication hiện có; dùng `users.id` để xác định giáo viên; thêm `name` theo yêu cầu ngày 2026-10-12 ở mục 22 |
+| users | Giữ schema authentication hiện có; dùng `users.id` để xác định giáo viên; thêm `name` ở mục 22 và `avatar` nullable ở mục 23 theo yêu cầu ngày 2026-10-12 |
 | classes | `id`, `teacher_id`, `name`, `grade`, `school_year`, `subject`, `tuition_fee`, `start_date`, `end_date`, `status`, `note`, `created_at`, `updated_at` |
 | students | `id`, `teacher_id`, `full_name`, `phone`, `parent_name`, `parent_phone`, `school`, `grade`, `date_of_birth`, `address`, `status`, `note`, `created_at`, `updated_at` |
 | class_schedules | `id`, `class_id`, `day_of_week`, `start_time`, `end_time`, `created_at`, `updated_at` |
@@ -60,6 +60,7 @@ Các trường có thể để trống:
 
 | Bảng | Trường nullable |
 | --- | --- |
+| users | `avatar` (mục 23) |
 | classes | `end_date`, `note` |
 | students | `phone`, `parent_name`, `parent_phone`, `school`, `grade`, `date_of_birth`, `address`, `note` |
 | class_students | `left_at` |
@@ -533,3 +534,59 @@ Business routes tiếp tục dùng middleware auth/role hiện có. Vai trò `AD
 - Avatar là bước sau. Chưa thêm cột hoặc API upload/avatar ở lượt này.
   Đề xuất Cloudinary để lưu/phân phối/xử lý ảnh và một ảnh mặc định dùng chung;
   chưa cấu hình dịch vụ hoặc upload ảnh.
+
+## 23. Schema avatar User (2026-10-12)
+
+- Người dùng duyệt bước schema/migration: `User.avatar` là `String? @db.Text`,
+  lưu URL ảnh riêng hoặc null. Không thêm bảng, index, public ID hay cột khác.
+- Migration `20261012120000_add_user_avatar` chỉ thêm cột TEXT nullable,
+  không default cố định hoặc UPDATE/backfill URL. Đã áp dụng bằng migrate
+  deploy trước khi generate Client vì cột optional tương thích với code cũ.
+- Postflight có 3 User, cả 3 avatar null. Kiểm tra checksum dữ liệu User trước/
+  sau migration (không in nội dung hoặc checksum) xác nhận mọi trường cũ được
+  giữ nguyên. Catalog xác nhận TEXT, nullable và không SQL default.
+- Null biểu diễn tài khoản chưa có ảnh riêng; response avatar ở bước sau sẽ
+  dùng ảnh mặc định chung. Bước này giữ public User bốn field, PATCH me chỉ
+  đổi name, JWT/refresh/logout và OpenAPI 30 operation/17 path.
+- Prisma validate/generate và TypeScript src đạt; migrate status báo đủ
+  12 migration đã cập nhật. Probe Prisma tạo User không truyền avatar nhận
+  null, ghi/đọc URL rồi clear về null và rollback fixture thành công.
+  Auth 6/6 và Docs 1/1 đạt, tổng hồi quy 7/7; không fail/skipped/cancelled.
+  Không chạy lại mọi bộ module, không reset hoặc seed database.
+- Upload ảnh, cấu hình Cloudinary, ảnh mặc định và response/OpenAPI avatar là
+  bước tiếp theo. Hướng dẫn/kiểm tra ở `docs/user-profile-api.md` và
+  `docs/backend-status-report.md`; dừng sau schema/migration.
+
+## 24. API avatar và Cloudinary (2026-10-12)
+
+- Theo yêu cầu `next`, thêm PATCH `/api/auth/me/avatar`, yêu cầu tài khoản
+  ACTIVE. Lấy ID từ auth; TEACHER/ADMIN chỉ đổi ảnh của mình. Không nhận URL,
+  public ID hoặc User ID từ client; PATCH `/api/auth/me` tiếp tục chỉ đổi name.
+- Multipart chỉ có một file `avatar`, JPEG/PNG/WebP tối đa 2 MiB và 20 MP.
+  Sharp kiểm định dạng thật/MIME, giải mã, xoay EXIF, crop cover về WebP tĩnh
+  256×256 quality 80, bỏ metadata; ảnh động lấy frame đầu.
+- Cloudinary nhận public ID mới do server sinh trong namespace User,
+  overwrite false. DB lưu URL sau upload; truy vấn cập nhật có ID, ACTIVE
+  và snapshot avatar cũ. Upload cùng snapshot có thể trả 200/409; đổi name
+  đồng thời không bị ghi đè. Candidate thua được dọn.
+- Chỉ dọn ảnh cũ khi URL khớp cloud/namespace/User. Dọn ảnh best effort;
+  lỗi DB chưa rõ commit sẽ đối soát URL, giữ ảnh mới nếu chưa xác nhận được
+  để tránh làm hỏng URL đã lưu. Có thể còn ảnh không được dùng sau timeout/
+  crash/lỗi DB; chưa có job dọn hoặc transaction phân tán.
+- Public User của Auth thêm avatar, tổng năm field id/email/name/avatar/role.
+  DB null trả URL ảnh mặc định chung; không backfill URL mặc định. Public
+  SVG tại `/api/assets/default-avatar.svg`; PUBLIC_API_ORIGIN hoặc
+  DEFAULT_AVATAR_URL xác định URL tuyệt đối, production phải đặt một trong
+  hai. Cấu hình Cloudinary thiếu chỉ chặn upload với 503.
+- Giữ schema đã duyệt, không có migration mới/API xóa-reset ảnh. OpenAPI
+  hiện có 31 operation/18 path, gồm 9 Auth. FE cần regenerate type và gửi
+  FormData cho upload; hướng dẫn ở `docs/user-profile-api.md`.
+- TypeScript src và kiểm tra riêng Auth/Avatar/E2E/Docs đạt. Auth 6/6,
+  Avatar 1/1, Docs 1/1, E2E 1/1, HTTP parser 1/1; tổng 10/10 đạt. Avatar test
+  dùng provider mock và DB thật, gồm validation, ownership, CAS và lỗi DB.
+- Smoke Cloudinary thật đạt hai upload PNG/JPEG, đọc CDN WebP 256×256,
+  xác nhận xóa ảnh cũ khi thay, B giữ nguyên và đổi name giữ avatar. Đã dọn
+  ảnh/tài khoản fixture và file probe. Cloud Name nhập nhầm tên API Key đã
+  được sửa trong `.env`; không in hoặc lưu credential thật vào tài liệu/Git.
+- Không reset/seed/commit/push hoặc chạy lại tất cả module. Kết quả và giới
+  hạn ở mục 18 `docs/backend-status-report.md`; dừng sau API này.

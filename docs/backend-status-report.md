@@ -1,6 +1,6 @@
 # Báo cáo backend Class Management
 
-Ngày tổng kiểm tra: **2026-10-10**; cập nhật tài khoản name: **2026-10-12**.
+Ngày tổng kiểm tra: **2026-10-10**; cập nhật tài khoản name/avatar: **2026-10-12**.
 Báo cáo đối chiếu code hiện tại và kết quả chạy
 test trong lượt tổng kiểm tra sau khi người dùng chọn giữ mọi Payment và lượt
 sửa lỗi parser/CORS, bổ sung test logout/refresh và test luồng nghiệp vụ tiếp theo.
@@ -12,6 +12,8 @@ Lượt bổ sung Swagger cho 3 API Enrollment được ghi ở mục 14.
 Lượt hoàn tất Swagger cho ClassSchedule và Payment được ghi ở mục 15.
 Lượt bổ sung User.name và PATCH hồ sơ được ghi ở mục 16; kết quả kiểm tra
 bước này được cập nhật riêng sau khi chạy.
+Lượt chuẩn bị schema avatar User được ghi riêng ở mục 17; contract API giữ nguyên.
+Lượt upload Cloudinary, ảnh mặc định và contract avatar được ghi ở mục 18.
 
 ## 1. Kết quả tổng kiểm tra trước sửa middleware
 
@@ -73,7 +75,7 @@ Code hiện có **7 model ứng dụng**; tên bảng vật lý theo Prisma:
 
 | Bảng | ID | Trường lưu chính |
 | --- | --- | --- |
-| `User` | Int tự tăng | id, email, name, passwordHash, role, status, createdAt, updatedAt |
+| `User` | Int tự tăng | id, email, name, avatar (nullable), passwordHash, role, status, createdAt, updatedAt |
 | `RefreshToken` | Int tự tăng | id, tokenHash, expiresAt, createdAt, userId |
 | `Class` | Int tự tăng | id, teacher_id, name, grade, schoolYear, subject, tuitionFee, startDate, endDate, status, note, createdAt, updatedAt |
 | `Student` | UUID | id, teacher_id, fullName, phone, parentName, parentPhone, school, grade, dateOfBirth, address, status, note, createdAt, updatedAt |
@@ -117,12 +119,12 @@ Chi tiết thiết kế ở [system-design.md](system-design.md),
 
 ## 4. API hiện có
 
-Có **30 cặp phương thức/đường dẫn** được đăng ký trong router hiện tại,
-không tính trang tài liệu, OpenAPI JSON và assets Swagger:
-8 Auth + 5 Class + 5 Student + 3 Enrollment + 5 Schedule + 4 Payment.
-OpenAPI vẫn có 17 path vì GET/PATCH hồ sơ dùng chung `/auth/me`.
+Có **31 cặp phương thức/đường dẫn** được đăng ký trong router hiện tại,
+không tính trang tài liệu, OpenAPI JSON, assets Swagger và ảnh mặc định:
+9 Auth + 5 Class + 5 Student + 3 Enrollment + 5 Schedule + 4 Payment.
+OpenAPI có 18 path; GET/PATCH hồ sơ dùng chung `/auth/me`.
 
-### Authentication — 8 API
+### Authentication — 9 API
 
 | Phương thức | Đường dẫn | Logic/quyền |
 | --- | --- | --- |
@@ -132,6 +134,7 @@ OpenAPI vẫn có 17 path vì GET/PATCH hồ sơ dùng chung `/auth/me`.
 | POST | `/api/auth/logout` | Xóa refresh token tương ứng nếu có, clear cookie |
 | GET | `/api/auth/me` | Bearer token; trả tài khoản đã xác thực |
 | PATCH | `/api/auth/me` | Bearer token, ACTIVE; chỉ đổi name của chính User từ auth, trim 1–150 Unicode code points |
+| PATCH | `/api/auth/me/avatar` | Bearer token, ACTIVE; upload một ảnh của chính User, multipart field avatar, Cloudinary |
 | GET | `/api/auth/registrations/pending` | Chỉ ADMIN ACTIVE xem giáo viên chờ duyệt |
 | PATCH | `/api/auth/registrations/:id/approve` | Chỉ ADMIN ACTIVE chuyển TEACHER/PENDING sang ACTIVE; duyệt trùng 409 |
 
@@ -139,7 +142,9 @@ OpenAPI vẫn có 17 path vì GET/PATCH hồ sơ dùng chung `/auth/me`.
 hash token. Refresh cookie dùng httpOnly, path `/api/auth`, sameSite lax,
 secure trong production. Logout thu hồi refresh token tương ứng; access token
 đã cấp tiếp tục theo hạn JWT và điều kiện middleware hiện có.
-Public User của register/login/refresh/GET-PATCH `/me` có id/email/name/role.
+Public User của register/login/refresh/GET-PATCH `/me` và PATCH avatar có
+id/email/name/avatar/role. Avatar luôn là URL ảnh riêng hoặc ảnh mặc định;
+User.avatar trong DB vẫn nullable, không lưu URL mặc định cho từng User.
 Pending list thêm status/createdAt, approve thêm status. PATCH tên không
 cấp token hoặc đổi refresh/logout; sai body 400, User mất 401, PENDING 403.
 
@@ -269,8 +274,8 @@ tra FK RESTRICT và CASCADE trong transaction thử được rollback.
 - Ghi danh lại cùng cặp Class–Student sau LEFT, chống trùng buổi học,
   lịch sử từng lần thu/chỉnh sửa hoặc hủy Payment.
 - DELETE Payment được chủ động bỏ khỏi phạm vi cơ bản theo phương án A.
-- Avatar tài khoản: chưa có column/API upload; ảnh mặc định chung ở FE và
-  Cloudinary chỉ là gợi ý cho bước sau.
+- Chưa có API xóa avatar/đặt lại ảnh mặc định; upload và ảnh mặc định đã có
+  theo mục 18.
 
 Đây là các phần ngoài phạm vi đã triển khai; chưa tự thêm API/model cho chúng.
 
@@ -755,7 +760,107 @@ Các file Auth/E2E/Docs/seed được kiểm tra riêng như bảng trên. Khôn
 tra trực tiếp render/Try it out bằng browser; giới hạn quyền preview của
 các lượt Swagger trước vẫn được giữ. Không reset DB hoặc chạy seed.
 
-## 17. Kết luận và bước sau
+## 17. Schema avatar User (2026-10-12)
+
+Thêm `User.avatar` kiểu PostgreSQL TEXT nullable để lưu URL ảnh riêng;
+null biểu diễn tài khoản chưa có ảnh riêng. Migration
+`20261012120000_add_user_avatar` chỉ ADD COLUMN, không backfill/default URL,
+không đổi ID hoặc các quan hệ. Đã áp dụng bằng migrate deploy trước khi
+generate Prisma Client để giữ tương thích với code tạo User đang chạy.
+
+Postflight xác nhận 3 User đều có avatar null; toàn bộ dữ liệu User ngoài
+cột mới giữ nguyên theo checksum trước/sau (không in dữ liệu hoặc checksum).
+Catalog xác nhận TEXT/nullable/no SQL default. Các kiểm tra đã chạy:
+
+| Kiểm tra bước avatar | Kết quả |
+| --- | --- |
+| Prisma validate/generate | Đạt với Prisma 7.10.0 |
+| Prisma migrate status | 12 migration, database đã cập nhật |
+| TypeScript src | Đạt |
+| Probe Prisma trong transaction rollback | Đạt: tạo User không truyền avatar nhận null; ghi/đọc URL rồi clear về null; giữ các trường hồ sơ khác; fixture không tồn tại sau rollback |
+| `npm run test:auth` | 6/6: luồng Auth/đổi tên giữ contract hiện tại |
+| `npm run test:docs` | 1/1: OpenAPI vẫn 30 operation/17 path và giữ public User bốn field |
+
+Tổng hồi quy **7/7 đạt**, không fail/skipped/cancelled; exit code đều 0.
+Probe dùng file tạm riêng đã xóa, không thêm test hoặc script lâu dài cho
+thay đổi nullable nhỏ. Không chạy lại mọi bộ module hoặc typecheck rộng tests.
+Kiểm tra này xác nhận schema/Client, chưa xác nhận upload hoặc ảnh mặc định.
+
+Đây là bước schema: public User/response/PATCH name/OpenAPI giữ nguyên;
+backend vẫn có 30 operation trên 17 path. Upload, Cloudinary, ảnh mặc định
+và response avatar là bước sau. Không reset database hoặc chạy seed.
+
+## 18. Upload avatar, Cloudinary và ảnh mặc định (2026-10-12)
+
+Theo yêu cầu `next`, thêm đúng một API PATCH `/api/auth/me/avatar` cho
+tài khoản ACTIVE đang đăng nhập. TEACHER và ADMIN chỉ cập nhật ảnh của mình,
+lấy User ID từ middleware; không nhận ID/URL/public ID từ client. Giữ API
+PATCH tên chỉ nhận name và giữ nguyên phiên JWT/refresh/logout.
+
+### Request, xử lý và response
+
+- Request `multipart/form-data` có đúng một file field `avatar`; không có
+  field/file khác. Nhận JPEG/PNG/WebP, tối đa 2 MiB và 20 megapixel. Kiểm tra
+  định dạng thật khớp MIME bằng Sharp, từ chối file rỗng/hỏng/SVG/GIF.
+- Backend xoay EXIF, crop cover thành WebP tĩnh 256×256, quality 80, bỏ
+  metadata; ảnh động dùng frame đầu. Cloudinary upload dùng public ID mới
+  do server sinh trong namespace của User và `overwrite:false`.
+- Chỉ lưu URL ảnh mới sau upload thành công; ghi kiểm tra đồng thời ID,
+  trạng thái ACTIVE và avatar cũ. Hai upload cùng snapshot trả 200/409,
+  candidate thua được dọn. Đổi name đồng thời không bị ghi đè.
+- Sau khi lưu, chỉ xóa ảnh cũ nếu URL xác nhận đúng cloud/namespace/User.
+  Lỗi dọn ảnh không làm thất bại bản cập nhật đã lưu. Nếu lỗi DB chưa rõ
+  commit, đọc lại để xác nhận; nếu không xác nhận được thì trả 500 và giữ
+  ảnh mới để tránh xóa ảnh có thể đã được DB sử dụng.
+- Public User dùng đúng năm field id/email/name/avatar/role. Khi avatar DB
+  null, trả URL ảnh mặc định chung từ PUBLIC_API_ORIGIN/DEFAULT_AVATAR_URL
+  hoặc localhost ở development. Production phải cấu hình origin hoặc URL.
+  Asset `GET /api/assets/default-avatar.svg` là public SVG cố định, không
+  tính vào 31 operation nghiệp vụ.
+- Mã lỗi: 400 dữ liệu/ảnh sai, 401/403 theo auth, 409 xung đột, 413 quá 2 MiB,
+  415 Content-Type/MIME không hỗ trợ, 500 lưu DB, 502 upload, 503 thiếu cấu
+  hình. Không trả/log lỗi thô Cloudinary hoặc secret.
+
+Các file chính: `src/modules/auth/avatar.{upload,image,storage,service}.ts`,
+`auth.response.ts`, route/controller/service/repository Auth,
+`src/config/{env,cloudinary}.ts`, `src/assets/default-avatar.ts`, `src/app.ts`.
+Thêm cloudinary/multer/sharp, cập nhật package lock, Auth OpenAPI và các
+test public User; không có migration mới trong lượt upload.
+Hướng dẫn Postman/FE/cấu hình ở `docs/user-profile-api.md` và mẫu các biến
+mới ở `.env.avatar.example`; không chứa credential thật.
+
+### Kết quả thực tế
+
+| Kiểm tra | Kết quả |
+| --- | --- |
+| TypeScript src | Đạt |
+| Typecheck riêng 6 Auth + Avatar + E2E + Docs | Đạt |
+| `npm run test:auth` | 6/6: public User năm field, luồng đăng ký/duyệt/login/refresh/logout/đổi tên |
+| `npm run test:avatar` | 1/1: HTTP/DB thật, provider mock; validation, A/B/ADMIN/PENDING, CAS/race, dọn ảnh, lỗi provider/DB và reconcile |
+| `npm run test:docs` | 1/1: 31 operation/18 path, Auth 9 API, multipart, public SVG và contract |
+| `npm run test:e2e` | 1/1: luồng nghiệp vụ giữ public User mới |
+| `npm run test:http` | 1/1: parser/CORS vẫn hoạt động |
+| Cloudinary thật qua HTTP API | Đạt: hai upload PNG/JPEG, CDN WebP 256×256, thay ảnh có xác nhận xóa ảnh cũ, GET me/PATCH name giữ đúng avatar, B giữ nguyên |
+| Dọn fixture thực tế | Đạt: ảnh Cloudinary và hai tài khoản test đã dọn; file probe tạm đã xóa |
+
+Tổng bộ test phù hợp **10/10 đạt**, không fail/skipped/cancelled trong lần
+chạy cuối. Smoke Cloudinary thật được ghi riêng, không cộng vào số test
+Node ở trên. Lần đầu provider trả 401 do Cloud Name bị nhập thành tên API
+Key; đã sửa đúng Cloud Name trong `.env`, ping và smoke sau đó đạt. Không
+in credential/token/URL DB hoặc đưa cấu hình thật vào Git.
+
+Test avatar từng lỗi do Node mock không hỗ trợ method trên Prisma Proxy;
+đã sửa seam test, typecheck và chạy lại đạt. Test chỉ dọn fixture riêng,
+không reset/migrate/seed hoặc sửa tài khoản thật. Test approve dùng ID của
+fixture đã tạo/xóa, không còn dùng một ID toàn cục giả định không tồn tại.
+
+Chưa chạy lại mọi bộ module hoặc kiểm tra Swagger trong trình duyệt. Dọn
+ảnh là best effort: timeout, process crash hoặc commit DB chưa xác định có
+thể để lại ảnh không được dùng; không có transaction phân tán hoặc job dọn
+ảnh trong bước này. Chưa mở API xóa/reset avatar. Sau khi đổi credential,
+cần khởi động lại dev server để nạp `.env` mới; smoke chạy bằng process mới.
+
+## 19. Kết luận và bước sau
 
 Các API cơ bản của Auth, Class, Student, Enrollment, Schedule và Payment đã
 có theo phạm vi trên. Lượt tổng kiểm tra đạt TypeScript, Prisma và 24/24 test
@@ -785,3 +890,8 @@ thêm test hồi quy, test phiên đăng nhập và test xuyên suốt, cập nh
 các lượt tiếp theo hoàn tất Swagger/OpenAPI Auth, Class, Student, Enrollment,
 ClassSchedule, Payment; bước mới bổ sung User.name và API đổi tên tài khoản.
 Tiến độ được ghi ở system-design.md.
+Schema avatar đã hoàn tất theo mục 17 (Auth/Docs 7/7 và probe Prisma đạt).
+Upload Cloudinary/ảnh mặc định/contract avatar đã hoàn tất theo mục 18,
+đạt 10/10 test phù hợp và smoke Cloudinary thật; inventory hiện có 31 API.
+Frontend cần sinh lại type từ OpenAPI và gửi FormData khi đổi avatar.
+Bước tiếp theo do người dùng chọn; dừng sau API upload hiện tại.

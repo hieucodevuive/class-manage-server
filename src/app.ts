@@ -4,6 +4,7 @@ import type { ErrorRequestHandler } from 'express';
 import cookieParser from 'cookie-parser';
 import { env } from './config/env';
 import docsRouter from './docs/docs.route';
+import { DEFAULT_AVATAR_SVG } from './assets/default-avatar';
 
 import authRouter from './modules/auth/auth.route';
 import classRouter from './modules/classes/class.route';
@@ -23,6 +24,14 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.use('/api/docs', docsRouter);
+app.get('/api/assets/default-avatar.svg', (_req, res) => {
+  res.set({
+    'Cache-Control': 'public, max-age=86400',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'",
+  });
+  res.type('image/svg+xml').send(DEFAULT_AVATAR_SVG);
+});
 app.use('/api/auth', authRouter);
 app.use('/api/classes', classRouter);
 app.use('/api/students', studentRouter);

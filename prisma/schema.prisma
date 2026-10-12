@@ -26,6 +26,7 @@ model User {
   id           Int    @id @default(autoincrement())
   email        String @unique
   name         String @db.Text
+  avatar       String? @db.Text
   passwordHash String
   role Role
   status AccountStatus @default(PENDING)

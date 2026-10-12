@@ -3,6 +3,7 @@ import { loginSchema, registerSchema, registrationIdSchema, updateProfileSchema 
 import { approveRegistration, authenticateUser, getCurrentUser, issueRefreshToken, listPendingRegistrations, logoutSession, refreshSession, registerTeacher, updateCurrentUser } from './auth.service';
 import { createAccessToken, verifyAccessToken  } from '../../utils/jwt';
 import { env } from '../../config/env';
+import { updateCurrentUserAvatar } from './avatar.service';
 
 export const registerController: RequestHandler = async (req, res) => {
   const result = registerSchema.safeParse(req.body);
@@ -182,6 +183,34 @@ export const updateMeController: RequestHandler = async (req, res) => {
     message: 'Cập nhật tên thành công',
     data: { user },
   });
+};
+
+export const updateAvatarController: RequestHandler = async (req, res) => {
+  const auth: ReturnType<typeof verifyAccessToken> | undefined = res.locals.auth;
+  if (!auth) {
+    res.status(401).json({ success: false, message: 'Chưa xác thực' });
+    return;
+  }
+  if (!req.file) {
+    res.status(400).json({ success: false, message: 'Vui lòng gửi một file avatar' });
+    return;
+  }
+  const result = await updateCurrentUserAvatar(auth.userId, req.file);
+  if (result.status === 'updated') {
+    res.json({ success: true, message: 'Cập nhật avatar thành công', data: { user: result.user } });
+    return;
+  }
+  const failures = {
+    not_found: [401, 'Tài khoản không còn tồn tại'],
+    pending: [403, 'Tài khoản đang chờ duyệt'],
+    not_configured: [503, 'Dịch vụ avatar chưa được cấu hình'],
+    upload_failed: [502, 'Không thể upload avatar, vui lòng thử lại'],
+    persistence_failed: [500, 'Không thể lưu avatar'],
+    conflict: [409, 'Avatar đã thay đổi, vui lòng tải lại và thử lại'],
+    invalid_image: [400, result.status === 'invalid_image' ? result.message : 'File ảnh không hợp lệ'],
+  } as const;
+  const [status, message] = failures[result.status];
+  res.status(status).json({ success: false, message });
 };
 
 export const refreshController: RequestHandler = async (req, res) => {

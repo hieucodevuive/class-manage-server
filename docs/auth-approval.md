@@ -2,7 +2,7 @@
 
 Luồng hiện tại: giáo viên đăng ký → tài khoản `PENDING` → ADMIN duyệt → tài khoản `ACTIVE` và đăng nhập được. Tài khoản ADMIN được tạo bằng lệnh nội bộ; API đăng ký công khai không thể tạo ADMIN.
 
-Swagger UI cho 8 API Auth ở `/api/docs/`, OpenAPI JSON ở
+Swagger UI cho 9 API Auth ở `/api/docs/`, OpenAPI JSON ở
 `/api/docs/openapi.json`. Cách dùng Authorize, refresh cookie và kết nối FE
 được hướng dẫn trong [swagger-auth.md](swagger-auth.md).
 
@@ -29,9 +29,9 @@ Remove-Item Env:\SEED_ADMIN_EMAIL, Env:\SEED_ADMIN_PASSWORD
 | `GET /api/auth/registrations/pending` | Access token ADMIN | Danh sách giáo viên `PENDING`, cũ nhất trước |
 | `PATCH /api/auth/registrations/:id/approve` | Access token ADMIN | Chuyển đúng một giáo viên `PENDING` sang `ACTIVE` |
 
-Đăng ký nhận JSON `{"email":"teacher@example.com","password":"mật khẩu ít nhất 12 ký tự"}`. Email được chuẩn hóa về chữ thường; login chấp nhận cách nhập chữ hoa/thường của tài khoản mới. Mật khẩu tối đa 72 byte theo giới hạn của bcrypt. Body strict chỉ nhận email/password; gửi thêm `name`, `role` hoặc `status` trả `400`. Backend gán `name = email` cho tài khoản mới. Email trùng, kể cả chỉ khác chữ hoa/thường, trả `409`. Response đăng ký chứa `data.user` gồm `id`, `email`, `name`, `role`; dùng ID này để duyệt.
+Đăng ký nhận JSON `{"email":"teacher@example.com","password":"mật khẩu ít nhất 12 ký tự"}`. Email được chuẩn hóa về chữ thường; login chấp nhận cách nhập chữ hoa/thường của tài khoản mới. Mật khẩu tối đa 72 byte theo giới hạn của bcrypt. Body strict chỉ nhận email/password; gửi thêm `name`, `avatar`, `role` hoặc `status` trả `400`. Backend gán `name = email` cho tài khoản mới. Email trùng, kể cả chỉ khác chữ hoa/thường, trả `409`. Response đăng ký chứa `data.user` gồm `id`, `email`, `name`, `avatar`, `role`; dùng ID này để duyệt. Avatar ban đầu dùng URL ảnh mặc định chung.
 
-ADMIN đăng nhập bằng `POST /api/auth/login`, lấy `data.accessToken` và gửi header `Authorization: Bearer <accessToken>` khi gọi hai API quản trị. Danh sách chờ trả `data.users`, mỗi mục có `id`, `email`, `name`, `role`, `status`, `createdAt`; không trả mật khẩu hoặc hash. Duyệt thành công trả `200` với `data.user` gồm `id`, `email`, `name`, `role`, `status`. ID sai định dạng trả `400`, ID không thuộc giáo viên cần duyệt trả `404`, tài khoản đã duyệt trả `409`. Thiếu token trả `401`, tài khoản không phải ADMIN trả `403`.
+ADMIN đăng nhập bằng `POST /api/auth/login`, lấy `data.accessToken` và gửi header `Authorization: Bearer <accessToken>` khi gọi hai API quản trị. Danh sách chờ trả `data.users`, mỗi mục có `id`, `email`, `name`, `avatar`, `role`, `status`, `createdAt`; không trả mật khẩu hoặc hash. Duyệt thành công trả `200` với `data.user` gồm `id`, `email`, `name`, `avatar`, `role`, `status`. ID sai định dạng trả `400`, ID không thuộc giáo viên cần duyệt trả `404`, tài khoản đã duyệt trả `409`. Thiếu token trả `401`, tài khoản không phải ADMIN trả `403`.
 
 Sau khi được duyệt, giáo viên gọi lại `POST /api/auth/login` để lấy access token và refresh cookie. Không có email thông báo tự động; ADMIN hoặc giao diện cần thông báo cho giáo viên theo cách đang sử dụng.
 
@@ -45,9 +45,11 @@ Chạy `npm run test:auth` để kiểm tra luồng trên database hiện tại.
 | `POST /api/auth/logout` | Cookie `refreshToken`, nếu có | 200, thu hồi phiên tương ứng và xóa cookie |
 | `GET /api/auth/me` | Bearer access token | Trả public user của tài khoản đã xác thực |
 | `PATCH /api/auth/me` | Bearer access token, tài khoản ACTIVE | Đổi tên của chính tài khoản; chỉ nhận `name` |
+| `PATCH /api/auth/me/avatar` | Bearer access token, tài khoản ACTIVE | Upload một file `avatar` JPEG/PNG/WebP bằng multipart/form-data |
 
-Public user trong register/login/refresh/GET `/me` và PATCH `/me` gồm đúng
-`id`, `email`, `name`, `role`. Chỉ hai response quản trị nói trên thêm
+Public user trong register/login/refresh/GET `/me`, PATCH `/me` và PATCH
+`/me/avatar` gồm đúng `id`, `email`, `name`, `avatar`, `role`. `avatar` luôn
+là URL ảnh riêng hoặc ảnh mặc định chung. Chỉ hai response quản trị nói trên thêm
 `status` và, với danh sách chờ, `createdAt`.
 
 - Refresh không yêu cầu Bearer token. Cookie thiếu/rỗng, token sai/đã dùng/
@@ -76,6 +78,20 @@ Endpoint này không dùng ID trong URL và không có nhánh `404` cho tài kho
 User ID/role; FE cập nhật User đang hiển thị từ `data.user`, hoặc đọc lại
 GET `/api/auth/me`. Login và refresh tiếp theo cũng trả tên đang lưu.
 Hướng dẫn đầy đủ, migration và phạm vi avatar ở
+[user-profile-api.md](user-profile-api.md).
+
+## Avatar của tài khoản
+
+Tài khoản ACTIVE dùng `PATCH /api/auth/me/avatar`: một file tên `avatar`,
+JPEG/PNG/WebP, tối đa 2 MiB và ảnh tối đa 20 megapixel. Backend xác nhận ảnh
+thật, xử lý thành WebP 256×256, upload Cloudinary rồi lưu URL cho chính
+tài khoản gọi. Body JSON chứa URL hoặc field/file bổ sung bị từ chối.
+
+Postman chọn Body → form-data → key `avatar` kiểu **File**. Frontend dùng
+FormData + Bearer token, để client tự tạo Content-Type/boundary. PATCH tên
+tiếp tục chỉ nhận `name`; không gửi avatar vào endpoint đó. Thành công trả
+`Cập nhật avatar thành công` cùng public User, không cấp token/cookie mới.
+Hướng dẫn cấu hình Cloudinary và mã lỗi ở
 [user-profile-api.md](user-profile-api.md).
 
 ### Kiểm tra đã chạy (2026-10-10)

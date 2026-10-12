@@ -6,6 +6,7 @@ import type { Server } from 'node:http';
 import { test } from 'node:test';
 import bcrypt from 'bcryptjs';
 import app from '../src/app';
+import { env } from '../src/config/env';
 import { prisma } from '../src/config/prisma';
 import type { User } from '../src/generated/prisma/client';
 import { createAccessToken } from '../src/utils/jwt';
@@ -20,6 +21,8 @@ test('Đổi name chỉ sửa tài khoản đang xác thực, strict body và c�
     pending: `${prefix}-pending@example.test`,
   };
   const password = 'Profile-test-password-123!';
+  const defaultAvatar = env.DEFAULT_AVATAR_URL ?? new URL('/api/assets/default-avatar.svg',
+    env.PUBLIC_API_ORIGIN ?? `http://localhost:${env.PORT}`).href;
 
   // Không đưa raw response, token/cookie hoặc hash vào assertion thất bại.
   function assertKeys(value: unknown, expected: string[], message: string): asserts value is Record<string, unknown> {
@@ -28,15 +31,16 @@ test('Đổi name chỉ sửa tài khoản đang xác thực, strict body và c�
   }
 
   function assertPublicUser(value: unknown, user: User, name: string) {
-    assertKeys(value, ['id', 'email', 'name', 'role'], 'User chỉ trả đúng bốn field công khai');
+    assertKeys(value, ['id', 'email', 'name', 'avatar', 'role'], 'User chỉ trả đúng năm field công khai');
     assert.ok(value.id === user.id && value.email === user.email && value.name === name && value.role === user.role,
       'User phải thuộc đúng tài khoản và trả name hiện tại');
+    assert.ok(value.avatar === (user.avatar ?? defaultAvatar), 'PATCH name và các response Auth phải giữ avatar hiện tại');
   }
 
   function assertAccountUnchanged(actual: User, before: User, expectedName = before.name, preserveUpdatedAt = true) {
     assert.ok(actual.id === before.id && actual.email === before.email && actual.role === before.role
-      && actual.status === before.status && actual.passwordHash === before.passwordHash,
-    'Đổi name không được sửa ID/email/role/status/passwordHash');
+      && actual.status === before.status && actual.passwordHash === before.passwordHash && actual.avatar === before.avatar,
+    'Đổi name không được sửa ID/email/role/status/passwordHash/avatar');
     assert.ok(actual.name === expectedName, 'DB phải lưu đúng name của tài khoản');
     assert.ok(actual.createdAt.getTime() === before.createdAt.getTime(), 'Không được đổi thời điểm tạo tài khoản');
     if (preserveUpdatedAt) {

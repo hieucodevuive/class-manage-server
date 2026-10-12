@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { Prisma } from '../../generated/prisma/client';
 import type { RegisterInput, UpdateProfileInput } from './auth.schema';
+import { serializeUser } from './auth.response';
 import { activatePendingTeacher, deleteRefreshTokenByHash, findPendingRegistrations, findRefreshTokenByHash, findRegistrationState, findUserByEmail, findUserByEmailIgnoreCase, findUserById, findUserStatusById, insertPendingTeacher, rotateRefreshToken, saveRefreshToken, updateUserName } from './auth.repository';
 import {
   createRefreshToken,
@@ -16,7 +17,7 @@ export async function registerTeacher(data: RegisterInput) {
 
   try {
     const user = await insertPendingTeacher(data.email, passwordHash);
-    return { status: 'created', user } as const;
+    return { status: 'created', user: serializeUser(user) } as const;
   } catch (error) {
     // Unique constraint vẫn bảo vệ email nếu hai request đăng ký chạy cùng lúc.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -26,14 +27,15 @@ export async function registerTeacher(data: RegisterInput) {
   }
 }
 
-export function listPendingRegistrations() {
-  return findPendingRegistrations();
+export async function listPendingRegistrations() {
+  const users = await findPendingRegistrations();
+  return users.map(user => ({ ...serializeUser(user), status: user.status, createdAt: user.createdAt }));
 }
 
 export async function approveRegistration(id: number) {
   const user = await activatePendingTeacher(id);
   if (user) {
-    return { status: 'approved', user } as const;
+    return { status: 'approved', user: { ...serializeUser(user), status: user.status } } as const;
   }
 
   const current = await findRegistrationState(id);
@@ -59,21 +61,18 @@ export async function authenticateUser(email: string, password: string) {
 
   return {
     status: user.status,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-    },
+    user: serializeUser(user),
   };
 }
 
-export function getCurrentUser(userId: number) {
-  return findUserById(userId);
+export async function getCurrentUser(userId: number) {
+  const user = await findUserById(userId);
+  return user ? serializeUser(user) : null;
 }
 
-export function updateCurrentUser(userId: number, data: UpdateProfileInput) {
-  return updateUserName(userId, data.name);
+export async function updateCurrentUser(userId: number, data: UpdateProfileInput) {
+  const user = await updateUserName(userId, data.name);
+  return user ? serializeUser(user) : null;
 }
 
 export async function getAccountStatus(userId: number) {
@@ -127,12 +126,7 @@ export async function refreshSession(refreshToken: string) {
   }
 
   return {
-    user: {
-      id: record.user.id,
-      email: record.user.email,
-      name: record.user.name,
-      role: record.user.role,
-    },
+    user: serializeUser(record.user),
     refreshToken: newRefreshToken,
     expiresAt,
   };

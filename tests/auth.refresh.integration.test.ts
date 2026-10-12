@@ -16,6 +16,8 @@ test('Refresh đổi token, chặn replay/hết hạn và chỉ cho một reques
   const email = `auth-refresh-${randomUUID()}@example.test`;
   const password = 'Test-password-123!';
   const invalidMessage = 'Refresh token không hợp lệ hoặc đã hết hạn';
+  const defaultAvatar = env.DEFAULT_AVATAR_URL ?? new URL('/api/assets/default-avatar.svg',
+    env.PUBLIC_API_ORIGIN ?? `http://localhost:${env.PORT}`).href;
 
   try {
     const user = await prisma.user.create({
@@ -51,10 +53,11 @@ test('Refresh đổi token, chặn replay/hết hạn và chỉ cho một reques
       assert.ok(body.message === message, 'Response phải dùng thông báo lỗi đã quy định');
     }
 
-    function assertPublicUser(value: { id: number; email: string; name: string; role: string }) {
-      assert.deepEqual(Object.keys(value).sort(), ['email', 'id', 'name', 'role']);
+    function assertPublicUser(value: { id: number; email: string; name: string; avatar: string; role: string }) {
+      assert.deepEqual(Object.keys(value).sort(), ['avatar', 'email', 'id', 'name', 'role']);
       assert.ok(value.id === user.id && value.email === email && value.name === email && value.role === 'TEACHER',
         'Response chỉ trả public user của tài khoản fixture');
+      assert.ok(value.avatar === defaultAvatar, 'Refresh và GET /me phải trả avatar mặc định khi DB null');
     }
 
     async function readSession(response: Response, expectedRecordId?: number) {

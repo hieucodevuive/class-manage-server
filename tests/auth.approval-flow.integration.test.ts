@@ -6,6 +6,7 @@ import type { Server } from 'node:http';
 import { test } from 'node:test';
 import bcrypt from 'bcryptjs';
 import app from '../src/app';
+import { env } from '../src/config/env';
 import { prisma } from '../src/config/prisma';
 
 test('ADMIN xem và duyệt đăng ký, sau đó giáo viên đăng nhập được', { timeout: 30000 }, async () => {
@@ -16,8 +17,11 @@ test('ADMIN xem và duyệt đăng ký, sau đó giáo viên đăng nhập đư�
     activeTeacher: `${prefix}-active@example.test`,
     pendingA: `${prefix}-a@example.test`,
     pendingB: `${prefix}-b@example.test`,
+    missing: `${prefix}-missing@example.test`,
   };
   const password = 'Test-password-123!';
+  const defaultAvatar = env.DEFAULT_AVATAR_URL ?? new URL('/api/assets/default-avatar.svg',
+    env.PUBLIC_API_ORIGIN ?? `http://localhost:${env.PORT}`).href;
 
   try {
     const passwordHash = await bcrypt.hash(password, 12);
@@ -55,7 +59,7 @@ test('ADMIN xem và duyệt đăng ký, sau đó giáo viên đăng nhập đư�
 
     const beforeApproval = await request('/api/auth/login', 'POST', { email: emails.pendingA, password });
     assert.equal(beforeApproval.status, 403);
-    assert.equal(beforeApproval.cookie, null);
+    assert.ok(beforeApproval.cookie === null, 'Login trước duyệt không được cấp cookie');
 
     const adminLogin = await request('/api/auth/login', 'POST', { email: emails.admin, password });
     const teacherLogin = await request('/api/auth/login', 'POST', { email: emails.activeTeacher, password });
@@ -78,9 +82,10 @@ test('ADMIN xem và duyệt đăng ký, sau đó giáo viên đăng nhập đư�
     for (const [id, email] of [[idA, emails.pendingA], [idB, emails.pendingB]] as const) {
       const registration = registrations.find(user => user.id === id);
       assert.ok(registration);
-      assert.deepEqual(Object.keys(registration).sort(), ['createdAt', 'email', 'id', 'name', 'role', 'status']);
+      assert.deepEqual(Object.keys(registration).sort(), ['avatar', 'createdAt', 'email', 'id', 'name', 'role', 'status']);
       assert.equal(registration.email, email);
       assert.ok(registration.name === email, 'Đăng ký chờ duyệt phải giữ name ban đầu bằng email');
+      assert.ok(registration.avatar === defaultAvatar, 'Đăng ký chờ duyệt phải dùng avatar mặc định khi DB null');
       assert.equal(registration.role, 'TEACHER');
       assert.equal(registration.status, 'PENDING');
       assert.equal(typeof registration.createdAt, 'string');
@@ -90,16 +95,23 @@ test('ADMIN xem và duyệt đăng ký, sau đó giáo viên đăng nhập đư�
     assert.equal((await request('/api/auth/registrations/abc/approve', 'PATCH', undefined, adminToken)).status, 400);
     assert.equal((await request('/api/auth/registrations/0/approve', 'PATCH', undefined, adminToken)).status, 400);
     assert.equal((await request('/api/auth/registrations/2147483648/approve', 'PATCH', undefined, adminToken)).status, 400);
-    assert.equal((await request('/api/auth/registrations/2147483647/approve', 'PATCH', undefined, adminToken)).status, 404);
+    // ID không tồn tại được chứng minh từ fixture đã xóa; không thử duyệt một ID toàn cục chưa biết.
+    const missing = await prisma.user.create({
+      data: { email: emails.missing, name: emails.missing, passwordHash, role: 'TEACHER', status: 'PENDING' },
+      select: { id: true },
+    });
+    await prisma.user.delete({ where: { id: missing.id } });
+    assert.equal((await request(`/api/auth/registrations/${missing.id}/approve`, 'PATCH', undefined, adminToken)).status, 404);
     assert.equal((await request(`/api/auth/registrations/${admin.id}/approve`, 'PATCH', undefined, adminToken)).status, 404);
 
     const approval = await request(approvePath, 'PATCH', undefined, adminToken);
     assert.equal(approval.status, 200);
-    assert.ok(Object.keys(approval.body.data.user).sort().join('|') === 'email|id|name|role|status',
+    assert.ok(Object.keys(approval.body.data.user).sort().join('|') === 'avatar|email|id|name|role|status',
       'Duyệt tài khoản phải trả đúng các field công khai');
     assert.ok(approval.body.data.user.id === idA && approval.body.data.user.email === emails.pendingA
       && approval.body.data.user.name === emails.pendingA && approval.body.data.user.role === 'TEACHER'
       && approval.body.data.user.status === 'ACTIVE', 'Duyệt phải giữ name và kích hoạt đúng giáo viên');
+    assert.ok(approval.body.data.user.avatar === defaultAvatar, 'Duyệt không được đổi avatar ban đầu');
     assert.equal((await request(approvePath, 'PATCH', undefined, adminToken)).status, 409);
     assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: idA } })).status, 'ACTIVE');
 

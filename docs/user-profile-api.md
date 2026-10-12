@@ -1,4 +1,4 @@
-# Tên hiển thị của tài khoản
+# Hồ sơ tài khoản: tên và avatar
 
 User có trường `name` để hiển thị tên giáo viên/ADMIN. Đây là tên tài khoản,
 khác với `Class.name` và `Student.fullName`.
@@ -18,7 +18,9 @@ khác với `Class.name` và `Student.fullName`.
   dài hơn giới hạn đó trong lúc backfill hoặc tạo tên ban đầu.
 
 Public User của register, login, refresh, GET `/api/auth/me` và PATCH
-`/api/auth/me` gồm đúng `id`, `email`, `name`, `role`. Danh sách đăng ký chờ
+`/api/auth/me` hoặc `/api/auth/me/avatar` gồm đúng `id`, `email`, `name`,
+`avatar`, `role`. `avatar` luôn là URL ảnh riêng hoặc ảnh mặc định chung.
+Danh sách đăng ký chờ
 thêm `status`, `createdAt`; response duyệt thêm `status`.
 
 ## PATCH /api/auth/me
@@ -66,6 +68,7 @@ thành một ký tự. Tên không có yêu cầu unique.
       "id": 42,
       "email": "teacher@example.com",
       "name": "Nguyễn Minh Anh",
+      "avatar": "http://localhost:5000/api/assets/default-avatar.svg",
       "role": "TEACHER"
     }
   }
@@ -92,8 +95,9 @@ cách xử lý chung hiện có.
 
 ## Cập nhật frontend
 
-1. Tải contract mới từ `/api/docs/openapi.json`; Swagger có 8 API Auth và
-   tổng 30 operation trên 17 path. PATCH dùng lại path `/auth/me` của GET.
+1. Tải contract mới từ `/api/docs/openapi.json`; Swagger có 9 API Auth và
+   tổng 31 operation trên 18 path. PATCH tên dùng lại path `/auth/me` của GET;
+   PATCH avatar dùng path `/auth/me/avatar`.
 2. Trong project frontend `class-manage`, chạy `npm run api:generate` để sinh
    lại `types/generated/api.ts`; giữ file generated là output của generator.
 3. Gửi `{ name }` qua service dùng API client hiện có. Thành công thì cập
@@ -131,7 +135,174 @@ Chưa chạy lại toàn bộ bộ test module; chi tiết và giới hạn type
 
 ## Avatar
 
-Avatar chưa được triển khai: chưa có column User.avatar/Avatar URL, API upload
-hoặc field avatar trong PATCH. FE có thể dùng một ảnh mặc định chung ở giao
-diện. Cloudinary là gợi ý cho bước lưu ảnh sau này; chưa cấu hình dịch vụ,
-upload hoặc lưu ảnh tài khoản trong bước đổi tên này.
+### Schema đã chuẩn bị (2026-10-12)
+
+- Đã thêm `User.avatar` kiểu `String? @db.Text`, tương ứng PostgreSQL
+  `TEXT NULL`, để lưu URL ảnh riêng của tài khoản. Không có SQL default,
+  index hoặc bảng ảnh mới.
+- Migration `20261012120000_add_user_avatar` chỉ thêm cột nullable. Đã áp
+  dụng bằng migrate deploy trước khi generate lại Prisma Client; cột optional
+  tương thích với code tạo tài khoản chưa gửi avatar.
+- Cả 3 tài khoản đang có giữ `avatar = null`. Đã kiểm tra dữ liệu User trước/
+  sau migration: các trường ngoài avatar được giữ nguyên, gồm tên đã đổi,
+  email, ID, mật khẩu, quyền, trạng thái và timestamps.
+- `null` nghĩa là chưa có ảnh riêng. Public response dùng một ảnh mặc định
+  chung; không chép URL ảnh mặc định vào từng hàng.
+
+Ở cuối bước database này, public User vẫn chỉ có `id`, `email`, `name`,
+`role`; contract còn 30 operation trên 17 path. Bước upload dưới đây mới
+bổ sung `avatar` vào response và thêm một API. PATCH `/api/auth/me` tiếp
+tục chỉ nhận name.
+
+Kết quả kiểm tra bước schema avatar được ghi riêng trong
+`docs/backend-status-report.md`, không dùng kết quả name để xác nhận upload.
+Prisma validate/generate, TypeScript src và migrate status (12 migration)
+đạt; probe Client ghi/đọc URL/null trong transaction rollback đạt.
+Auth 6/6 và Docs 1/1 đạt, tổng hồi quy 7/7. Upload và ảnh mặc định thực tế
+chưa được triển khai/kiểm tra ở bước database này.
+
+### Ảnh mặc định và public response
+
+- Khi `User.avatar = null`, backend trả một URL ảnh mặc định chung ở field
+  `avatar`, không lưu URL mặc định vào từng hàng User.
+- Asset mặc định được phục vụ công khai tại
+  `GET /api/assets/default-avatar.svg`; đây là file ảnh, không phải API
+  nghiệp vụ được tính vào 31 operation Swagger.
+- Có thể đặt `PUBLIC_API_ORIGIN` thành origin công khai của backend để tạo
+  URL asset tuyệt đối, ví dụ `https://api.example.com`. `DEFAULT_AVATAR_URL`
+  dùng để chọn URL ảnh mặc định khác khi cần. Ở local, backend dùng origin
+  localhost theo `PORT` khi chưa đặt origin riêng. Production phải có
+  `PUBLIC_API_ORIGIN` hoặc `DEFAULT_AVATAR_URL`; dùng URL HTTP/HTTPS,
+  `PUBLIC_API_ORIGIN` chỉ chứa origin, không thêm path/query/fragment.
+- Register/login/refresh/GET me/PATCH tên/PATCH avatar trả cùng public User
+  5 field. Danh sách chờ và duyệt vẫn giữ các field quản trị bổ sung đã có.
+
+### PATCH /api/auth/me/avatar
+
+Upload một ảnh cho chính tài khoản ACTIVE đang đăng nhập. Backend lấy ID
+từ `res.locals.auth.userId`; TEACHER và ADMIN đều chỉ đổi ảnh của mình.
+
+| Request | Quy tắc |
+| --- | --- |
+| Content-Type | `multipart/form-data`, client tự thêm boundary |
+| Field | Một file bắt buộc tên `avatar`, không có field/file khác |
+| Loại ảnh | JPEG (`image/jpeg`), PNG (`image/png`) hoặc WebP (`image/webp`) |
+| Kích thước file | Tối đa 2 MiB = 2.097.152 byte |
+| Ảnh giải mã | Tối đa 20 megapixel; backend xác nhận định dạng thật khớp MIME |
+
+Backend giải mã ảnh bằng Sharp, xử lý thành ảnh WebP kích thước 256×256
+rồi upload qua Cloudinary. Ảnh được xoay theo EXIF orientation, crop `cover`,
+chất lượng WebP 80 và bỏ metadata. PNG/WebP động dùng frame đầu, kết quả
+là ảnh tĩnh. Database lưu URL ảnh mới sau khi upload thành
+công. API không nhận URL ảnh qua JSON hoặc text field; PATCH tên vẫn
+chỉ nhận `name` như trên.
+
+#### Thử bằng Postman
+
+1. Chọn `PATCH http://localhost:5000/api/auth/me/avatar`.
+2. Authorization → Bearer Token: dùng access token của tài khoản ACTIVE.
+3. Body → **form-data**. Thêm key `avatar`, đổi kiểu bên cạnh key từ
+   **Text** sang **File**, rồi chọn ảnh JPEG/PNG/WebP hợp lệ.
+4. Xóa header `Content-Type: application/json` đã đặt thủ công nếu có.
+   Để Postman tự tạo `multipart/form-data` kèm boundary, rồi Send.
+5. Lấy URL từ `data.user.avatar`, hoặc gọi GET `/api/auth/me` để đọc lại.
+
+Thành công trả 200:
+
+```json
+{
+  "success": true,
+  "message": "Cập nhật avatar thành công",
+  "data": {
+    "user": {
+      "id": 42,
+      "email": "teacher@example.com",
+      "name": "Nguyễn Minh Anh",
+      "avatar": "https://res.cloudinary.com/example/image/upload/avatar-example.webp",
+      "role": "TEACHER"
+    }
+  }
+}
+```
+
+URL trong ví dụ chỉ minh họa; response thật dùng URL ảnh vừa upload.
+Upload không cấp access token hoặc refresh cookie mới. FE cập nhật hồ sơ
+từ toàn bộ `data.user`; phiên đăng nhập hiện có tiếp tục dùng được.
+
+#### Mã lỗi upload
+
+Các lỗi dùng `{ "success": false, "message": "..." }`, không trả
+credentials hoặc lỗi thô từ Cloudinary:
+
+| HTTP | Message/phạm vi |
+| --- | --- |
+| 400 | `Vui lòng gửi một file avatar`: thiếu file hoặc file rỗng |
+| 400 | `Dữ liệu upload avatar không hợp lệ`: multipart/boundary sai |
+| 400 | `Chỉ gửi một file trong field avatar`: field/file thêm hoặc sai tên |
+| 400 | `File ảnh không hợp lệ`: không giải mã được hoặc ảnh vượt giới hạn pixels |
+| 400 | `Nội dung file không khớp định dạng ảnh`: ảnh thật khác MIME gửi lên |
+| 401 | Theo auth; gồm `Tài khoản không còn tồn tại` nếu tài khoản mất trong lúc xử lý |
+| 403 | `Tài khoản đang chờ duyệt` |
+| 409 | `Avatar đã thay đổi, vui lòng tải lại và thử lại`: snapshot ảnh đổi trong lúc upload/ghi |
+| 413 | `Ảnh không được vượt quá 2 MiB` |
+| 415 | `Upload avatar phải dùng multipart/form-data` hoặc `Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP` |
+| 500 | `Không thể lưu avatar`: lỗi lưu/đối soát database; đọc GET me để xác nhận ảnh hiện tại |
+| 502 | `Không thể upload avatar, vui lòng thử lại`: lỗi upload Cloudinary |
+| 503 | `Dịch vụ avatar chưa được cấu hình`: thiếu cấu hình Cloudinary |
+
+Lỗi JSON parser chung vẫn có thể trả 400/413/415 trước middleware auth.
+Backend kiểm lại tài khoản và snapshot ảnh khi ghi; xung đột trả 409 để
+FE tải lại hồ sơ rồi gửi lại. API không có version/precondition từ client
+để phát hiện một hồ sơ đã cũ từ lần tải trước.
+
+Sau khi xác thực và kiểm multipart/MIME/kích thước, service kiểm cấu hình
+Cloudinary trước khi giải mã ảnh. Thiếu cấu hình sẽ trả 503 ở bước này.
+Nếu không xác nhận được kết quả ghi DB sau lỗi kết nối, backend giữ ảnh
+candidate để tránh xóa ảnh có thể đã được dùng; FE đọc lại GET me sau 500.
+
+#### Frontend dùng FormData
+
+`file` là đối tượng `File` lấy từ input chọn ảnh. Service gửi tới backend:
+
+```typescript
+const formData = new FormData();
+formData.append('avatar', file);
+
+const response = await fetch(`${apiBaseUrl}/auth/me/avatar`, {
+  method: 'PATCH',
+  headers: { Authorization: `Bearer ${accessToken}` },
+  body: formData,
+});
+const result = await response.json();
+if (!response.ok) throw new Error(result.message);
+const user = result.data.user;
+```
+
+Để trình duyệt tự tạo `Content-Type` và boundary khi gửi FormData theo
+[hướng dẫn FormData của MDN](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest_API/Using_FormData_Objects). Nếu API
+client hiện tại mặc định gắn `application/json`, bỏ header đó cho request
+upload. Với Axios, gửi cùng FormData và Bearer token qua client hiện có.
+FE không cần Cloudinary API secret hoặc gọi trực tiếp Cloudinary.
+
+#### Cấu hình Cloudinary cho backend
+
+1. Tạo tài khoản tại [Cloudinary](https://cloudinary.com/users/register_free).
+2. Trong Console của product environment, tìm Cloud Name và trang API Keys
+   để lấy API Key/API Secret. [Hướng dẫn cấu hình Node.js của Cloudinary](https://cloudinary.com/documentation/node_integration)
+   mô tả ba giá trị cấu hình này.
+3. Điền các giá trị **trong `.env` local của backend** vào
+   `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`,
+   rồi khởi động lại server. Không gửi các giá trị này vào chat hoặc đưa
+   API secret vào frontend/repository.
+4. Khi đủ cấu hình, dùng Postman hoặc Swagger để upload file thử như trên.
+
+Ba biến Cloudinary là optional để backend/Auth vẫn chạy khi chưa cấu hình.
+Upload thiếu cấu hình trả 503. Test upload dùng provider mock để kiểm tra
+luồng API; kết quả mock không xác nhận ảnh đã được upload lên tài khoản
+Cloudinary thật. Kết quả kiểm tra Cloudinary thực tế và các bộ test của
+lượt upload được ghi riêng trong `docs/backend-status-report.md`.
+
+Các lệnh kiểm tra của lượt này: `npx tsc --noEmit`, `npm run test:docs`,
+`npm run test:auth`, `npm run test:avatar` và `npm run test:e2e`. Auth/Avatar/E2E
+dùng fixture riêng và dọn dữ liệu của chính test; Docs chỉ đọc HTTP/contract,
+không ghi DB. Chạy các bộ test DB lần lượt.

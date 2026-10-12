@@ -23,9 +23,9 @@ export const openapiDocument = {
     title: 'Class Management API',
     version: '1.0.0',
     description: [
-      'Tài liệu toàn bộ 30 API hiện có: 8 API Authentication/duyệt tài khoản/hồ sơ cá nhân, 5 API CRUD Class, 5 API CRUD Student, 3 API Enrollment, 5 API ClassSchedule và 4 API Payment.',
+      'Tài liệu toàn bộ 31 API hiện có: 9 API Authentication/duyệt tài khoản/hồ sơ cá nhân, 5 API CRUD Class, 5 API CRUD Student, 3 API Enrollment, 5 API ClassSchedule và 4 API Payment.',
       'Giáo viên đăng ký → PENDING → ADMIN duyệt → ACTIVE → đăng nhập.',
-      'Tên tài khoản ban đầu bằng email được lưu; PATCH /auth/me cập nhật tên riêng của tài khoản ACTIVE. Avatar chưa được triển khai.',
+      'Tên tài khoản ban đầu bằng email được lưu; PATCH /auth/me cập nhật tên riêng và PATCH /auth/me/avatar nhận một file ảnh multipart của tài khoản ACTIVE. Public User luôn có URL avatar riêng hoặc ảnh mặc định chung.',
       'Login trả data.accessToken và đặt refreshToken trong cookie HttpOnly.',
       'Dùng Authorize với access token để gọi /auth/me, các API ADMIN, Class, Student, Enrollment, ClassSchedule và Payment. Nhập token, không thêm tiền tố Bearer.',
       'Refresh/logout dùng cookie trình duyệt đã nhận; không gửi refresh token trong JSON body.',
@@ -34,7 +34,7 @@ export const openapiDocument = {
   },
   servers: [{ url: '/api', description: 'Backend đang phục vụ trang tài liệu này' }],
   tags: [
-    { name: 'Auth', description: 'Đăng ký, đăng nhập, phiên đăng nhập và tên tài khoản hiện tại' },
+    { name: 'Auth', description: 'Đăng ký, đăng nhập, phiên đăng nhập, tên và avatar tài khoản hiện tại' },
     { name: 'AuthAdmin', description: 'ADMIN ACTIVE xem và duyệt giáo viên chờ kích hoạt' },
     { name: 'Classes', description: 'CRUD lớp thuộc tài khoản đang đăng nhập; TEACHER/ADMIN ACTIVE' },
     { name: 'Students', description: 'CRUD hồ sơ học sinh thuộc tài khoản đang đăng nhập; TEACHER/ADMIN ACTIVE' },

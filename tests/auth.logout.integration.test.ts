@@ -16,6 +16,8 @@ test('Logout chỉ xóa phiên được gửi, xóa cookie đúng và giữ các
   const userIds: number[] = [];
   const prefix = `auth-logout-test-${randomUUID()}`;
   const password = 'Test-password-123!';
+  const defaultAvatar = env.DEFAULT_AVATAR_URL ?? new URL('/api/assets/default-avatar.svg',
+    env.PUBLIC_API_ORIGIN ?? `http://localhost:${env.PORT}`).href;
 
   function assertKeys(value: unknown, expected: string[], message: string): asserts value is Record<string, unknown> {
     assert.ok(value !== null && typeof value === 'object' && !Array.isArray(value), message);
@@ -23,9 +25,10 @@ test('Logout chỉ xóa phiên được gửi, xóa cookie đúng và giữ các
   }
 
   function assertPublicUser(actual: unknown, expected: { id: number; email: string; name: string; role: string }) {
-    assertKeys(actual, ['id', 'email', 'name', 'role'], 'User chỉ được chứa các field công khai');
+    assertKeys(actual, ['id', 'email', 'name', 'avatar', 'role'], 'User chỉ được chứa các field công khai');
     assert.ok(actual.id === expected.id && actual.email === expected.email && actual.name === expected.name && actual.role === expected.role,
       'User phải đúng tài khoản đang được xác thực');
+    assert.ok(actual.avatar === defaultAvatar, 'User fixture chưa có ảnh phải trả avatar mặc định');
   }
 
   function refreshCookie(header: string | null) {
