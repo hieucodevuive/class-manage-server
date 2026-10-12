@@ -22,6 +22,7 @@ test('GET /api/classes/:classId/students liệt kê lịch sử ghi danh đúng 
       const user = await prisma.user.create({
         data: {
           email: `${prefix}-${suffix}@example.test`,
+          name: `${prefix}-${suffix}@example.test`,
           passwordHash: 'test-fixture-no-login',
           role,
           status: 'ACTIVE',

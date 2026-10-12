@@ -1,6 +1,7 @@
 # Báo cáo backend Class Management
 
-Ngày kiểm tra: **2026-10-10**. Báo cáo đối chiếu code hiện tại và kết quả chạy
+Ngày tổng kiểm tra: **2026-10-10**; cập nhật tài khoản name: **2026-10-12**.
+Báo cáo đối chiếu code hiện tại và kết quả chạy
 test trong lượt tổng kiểm tra sau khi người dùng chọn giữ mọi Payment và lượt
 sửa lỗi parser/CORS, bổ sung test logout/refresh và test luồng nghiệp vụ tiếp theo.
 Kết quả chạy lại toàn bộ bộ test sau các thay đổi này ở mục 10.
@@ -9,6 +10,8 @@ Lượt bổ sung Swagger cho 5 API Class được ghi ở mục 12.
 Lượt bổ sung Swagger cho 5 API Student được ghi ở mục 13.
 Lượt bổ sung Swagger cho 3 API Enrollment được ghi ở mục 14.
 Lượt hoàn tất Swagger cho ClassSchedule và Payment được ghi ở mục 15.
+Lượt bổ sung User.name và PATCH hồ sơ được ghi ở mục 16; kết quả kiểm tra
+bước này được cập nhật riêng sau khi chạy.
 
 ## 1. Kết quả tổng kiểm tra trước sửa middleware
 
@@ -70,7 +73,7 @@ Code hiện có **7 model ứng dụng**; tên bảng vật lý theo Prisma:
 
 | Bảng | ID | Trường lưu chính |
 | --- | --- | --- |
-| `User` | Int tự tăng | id, email, passwordHash, role, status, createdAt, updatedAt |
+| `User` | Int tự tăng | id, email, name, passwordHash, role, status, createdAt, updatedAt |
 | `RefreshToken` | Int tự tăng | id, tokenHash, expiresAt, createdAt, userId |
 | `Class` | Int tự tăng | id, teacher_id, name, grade, schoolYear, subject, tuitionFee, startDate, endDate, status, note, createdAt, updatedAt |
 | `Student` | UUID | id, teacher_id, fullName, phone, parentName, parentPhone, school, grade, dateOfBirth, address, status, note, createdAt, updatedAt |
@@ -82,6 +85,9 @@ Ngoài ra Prisma có bảng kỹ thuật `_prisma_migrations` để theo dõi mi
 Tên logic trong thiết kế là users/classes/students/class_students/
 class_schedules/payments; code giữ convention bảng trên, không đổi tên hàng loạt.
 `teacherId` trong Prisma ánh xạ xuống cột `teacher_id` ở Class và Student.
+`User.name` là TEXT NOT NULL, không có SQL default. Migration
+`20261012110000_add_user_name` đã được áp dụng với backfill email cho User cũ
+được người dùng duyệt; tài khoản mới do register/seed gán name = email.
 
 ```mermaid
 erDiagram
@@ -111,11 +117,12 @@ Chi tiết thiết kế ở [system-design.md](system-design.md),
 
 ## 4. API hiện có
 
-Có **29 cặp phương thức/đường dẫn nghiệp vụ** được đăng ký trong router hiện tại,
+Có **30 cặp phương thức/đường dẫn** được đăng ký trong router hiện tại,
 không tính trang tài liệu, OpenAPI JSON và assets Swagger:
-7 Auth + 5 Class + 5 Student + 3 Enrollment + 5 Schedule + 4 Payment.
+8 Auth + 5 Class + 5 Student + 3 Enrollment + 5 Schedule + 4 Payment.
+OpenAPI vẫn có 17 path vì GET/PATCH hồ sơ dùng chung `/auth/me`.
 
-### Authentication — 7 API
+### Authentication — 8 API
 
 | Phương thức | Đường dẫn | Logic/quyền |
 | --- | --- | --- |
@@ -124,6 +131,7 @@ không tính trang tài liệu, OpenAPI JSON và assets Swagger:
 | POST | `/api/auth/refresh` | Dùng refresh cookie hợp lệ và tài khoản ACTIVE; đổi refresh token |
 | POST | `/api/auth/logout` | Xóa refresh token tương ứng nếu có, clear cookie |
 | GET | `/api/auth/me` | Bearer token; trả tài khoản đã xác thực |
+| PATCH | `/api/auth/me` | Bearer token, ACTIVE; chỉ đổi name của chính User từ auth, trim 1–150 Unicode code points |
 | GET | `/api/auth/registrations/pending` | Chỉ ADMIN ACTIVE xem giáo viên chờ duyệt |
 | PATCH | `/api/auth/registrations/:id/approve` | Chỉ ADMIN ACTIVE chuyển TEACHER/PENDING sang ACTIVE; duyệt trùng 409 |
 
@@ -131,12 +139,16 @@ không tính trang tài liệu, OpenAPI JSON và assets Swagger:
 hash token. Refresh cookie dùng httpOnly, path `/api/auth`, sameSite lax,
 secure trong production. Logout thu hồi refresh token tương ứng; access token
 đã cấp tiếp tục theo hạn JWT và điều kiện middleware hiện có.
+Public User của register/login/refresh/GET-PATCH `/me` có id/email/name/role.
+Pending list thêm status/createdAt, approve thêm status. PATCH tên không
+cấp token hoặc đổi refresh/logout; sai body 400, User mất 401, PENDING 403.
 
 ADMIN được xem/duyệt yêu cầu tài khoản; các API dữ liệu lớp/học sinh/học phí
 vẫn giới hạn theo chủ sở hữu. Không có quyền quản trị xuyên dữ liệu giáo viên.
 Tạo ADMIN là lệnh seed nội bộ riêng, không phải API đăng ký công khai.
 
-Chi tiết ở [auth-approval.md](auth-approval.md).
+Chi tiết ở [auth-approval.md](auth-approval.md) và
+[user-profile-api.md](user-profile-api.md).
 
 ### Class — 5 API
 
@@ -257,6 +269,8 @@ tra FK RESTRICT và CASCADE trong transaction thử được rollback.
 - Ghi danh lại cùng cặp Class–Student sau LEFT, chống trùng buổi học,
   lịch sử từng lần thu/chỉnh sửa hoặc hủy Payment.
 - DELETE Payment được chủ động bỏ khỏi phạm vi cơ bản theo phương án A.
+- Avatar tài khoản: chưa có column/API upload; ảnh mặc định chung ở FE và
+  Cloudinary chỉ là gợi ý cho bước sau.
 
 Đây là các phần ngoài phạm vi đã triển khai; chưa tự thêm API/model cho chúng.
 
@@ -672,7 +686,76 @@ Chưa kiểm tra render/Try it out trong trình duyệt do quyền mở preview 
 từ chối ở lượt trước. Đã hoàn tất tài liệu cho tất cả API hiện có, dừng theo
 phạm vi người dùng yêu cầu.
 
-## 16. Kết luận và bước sau
+## 16. User.name và API đổi tên (2026-10-12)
+
+Người dùng duyệt thêm name vào User và API PATCH `/api/auth/me` để giáo viên/
+ADMIN ACTIVE tự đổi tên. Phạm vi Auth tăng từ 7 lên 8 operation, tổng backend
+từ 29 lên 30; OpenAPI vẫn có 17 path.
+
+- `User.name` dùng TEXT NOT NULL, không SQL default. Migration thêm cột,
+  backfill bằng email đang lưu theo quyết định rõ ràng của người dùng rồi
+  đặt NOT NULL. Quy tắc backfill không yêu cầu đoán tên thật của User cũ.
+- Register tiếp tục strict email/password và gán name bằng email được lưu.
+  Seed tạo User mới cũng gán name = email; khi User đã có, giữ tên hiện tại.
+  Public response register/login/refresh/GET-PATCH `/me` gồm id/email/name/role;
+  pending list thêm status/createdAt, approve thêm status.
+- PATCH dùng requireAuth và ID từ `res.locals.auth.userId`, body strict chỉ
+  nhận name. Trim rồi nhận 1–150 Unicode code points, tương đương
+  `Array.from(name.trim()).length`; không cho sửa
+  email/role/status/ID/password/avatar bằng endpoint này.
+- Thành công 200 với message `Cập nhật tên thành công`, data.user gồm bốn
+  public field. Body/field sai 400 `Thông tin tài khoản không hợp lệ` kèm
+  errors; token sai hoặc User mất 401; PENDING 403. Không có nhánh User 404.
+- JWT/refresh/logout giữ logic phiên hiện có. Đổi tên không cấp token/cookie;
+  GET `/me`, login và refresh trả tên đang lưu. Frontend cập nhật User từ
+  response và sinh lại types bằng cơ chế OpenAPI hiện có.
+- Avatar chưa triển khai. FE có thể dùng ảnh mặc định chung; Cloudinary là
+  gợi ý bước lưu ảnh sau này, chưa có column/upload/API trong bước này.
+- Hướng dẫn ở `docs/user-profile-api.md`, cập nhật `docs/auth-approval.md`
+  và `docs/swagger-auth.md`. Triển khai cần dừng server, cập nhật bộ code mới,
+  chạy migration deploy/generate rồi kiểm tra trước khi khởi động lại.
+
+### Kết quả kiểm tra bước name
+
+`prisma migrate deploy` đã áp dụng migration
+`20261012110000_add_user_name`; Prisma Client đã generate. Prisma validate
+đạt, migrate status báo đủ 11 migration đã cập nhật. Postflight xác nhận
+cột TEXT, NOT NULL, không default; 3 User có sẵn được backfill name = email.
+
+| Kiểm tra đã chạy trong lượt này | Kết quả |
+| --- | --- |
+| TypeScript src | Đạt |
+| Typecheck riêng 6 file Auth, E2E, Docs và hai seed với target ES2022/strict | Đạt |
+| `npm run test:auth` | 6/6: đăng ký/duyệt/gate/login/refresh/logout và đổi tên |
+| `npm run test:e2e` | 1/1: Auth và luồng Class/Student/Enrollment/Schedule/Payment giữ ownership/lịch sử |
+| `npm run test:classes` | 2/2: CRUD và bảo vệ lịch sử |
+| `npm run test:schedules:schema` | 1/1: schema/quan hệ, rollback fixture |
+| `npm run test:payments:schema` | 1/1: schema/tiền/quan hệ, rollback fixture |
+| `npm run test:docs` | 1/1: OpenAPI 30 operation/17 path, name/PATCH/auth/CORS/assets |
+
+Tổng **12/12 đạt**, không fail/skipped/cancelled trong lượt chạy cuối;
+exit code đều 0. Lần chạy Auth đầu tiên đạt 5/6: test giả định Zod đếm
+UTF-16 đã bị sai với emoji. Đã đối chiếu source/probe Zod đang cài, sửa
+tài liệu và test sang Unicode code point; giữ nguyên validation runtime
+`z.string().trim().min(1).max(150)` rồi chạy lại Auth thành công.
+Đồng thời sửa mô tả độ dài tối thiểu mật khẩu đăng ký trong OpenAPI cũ
+từ UTF-16 sang Unicode code point cho đúng Zod đang cài; không đổi validation
+hoặc chính sách mật khẩu/phiên đăng nhập.
+
+Test đổi tên kiểm tra A/B/ADMIN chỉ sửa chính mình, PENDING/thiếu/sai token,
+body strict/trim/Unicode/boundary, không đổi ID/email/role/status/hash hoặc
+tài khoản khác. GET me/login/refresh với phiên đã cấp trước đổi tên đều trả
+tên đang lưu. Fixture ORM của các bộ test và hai INSERT User bằng SQL đã
+bổ sung name để tương thích cột bắt buộc; test chỉ dọn dữ liệu thử riêng.
+
+Chưa chạy lại tất cả bộ test module. Typecheck toàn bộ thư mục tests ngoài
+tsconfig src còn có lỗi typing ở Classes/EnrollmentList/PaymentUpdate đã
+được ghi nhận khi kiểm tra rộng; không mở rộng thay đổi sang các lỗi đó.
+Các file Auth/E2E/Docs/seed được kiểm tra riêng như bảng trên. Không kiểm
+tra trực tiếp render/Try it out bằng browser; giới hạn quyền preview của
+các lượt Swagger trước vẫn được giữ. Không reset DB hoặc chạy seed.
+
+## 17. Kết luận và bước sau
 
 Các API cơ bản của Auth, Class, Student, Enrollment, Schedule và Payment đã
 có theo phạm vi trên. Lượt tổng kiểm tra đạt TypeScript, Prisma và 24/24 test
@@ -687,17 +770,18 @@ Các giới hạn coverage ở mục 6 vẫn còn.
 Swagger Auth đã được thêm theo mục 11 (8/8 kiểm tra phù hợp), Class bổ sung
 theo mục 12 (3/3), Student theo mục 13 (6/6), Enrollment theo mục 14 (4/4);
 TypeScript đạt trong mỗi lượt. Người dùng cho phép hoàn tất ClassSchedule
-và Payment cùng lượt ở mục 15 (10/10 kiểm tra phù hợp). Swagger hiện đã có
-đủ 29 API hiện có; giới hạn kiểm tra trình duyệt được ghi riêng.
+và Payment cùng lượt ở mục 15 (10/10 kiểm tra phù hợp). Lượt đó có đủ 29 API;
+bổ sung User.name/PATCH hồ sơ ở mục 16 nâng inventory lên 30 API, đạt 12/12
+kiểm tra phù hợp và TypeScript trong phạm vi đã nêu. Giới hạn kiểm tra trình
+duyệt của các lượt Swagger trước được ghi riêng.
 
-Đã chốt kết quả cho toàn bộ bộ test hiện có. Bước phát triển hoặc bổ sung
-coverage tiếp theo do người dùng chọn. Nếu chuyển sang tính năng mới, cần
+Các kết quả test lịch sử được giữ riêng theo lượt. Bước phát triển hoặc bổ
+sung coverage tiếp theo do người dùng chọn. Nếu chuyển sang tính năng mới, cần
 thống nhất từng API và tiếp tục kiểm tra ownership cho các chức năng danh
 sách/tổng hợp.
 
 Lượt tổng kiểm tra tạo báo cáo này; các lượt tiếp theo sửa middleware chung,
 thêm test hồi quy, test phiên đăng nhập và test xuyên suốt, cập nhật tài liệu;
-các lượt hiện tại hoàn tất Swagger/OpenAPI Auth, Class, Student, Enrollment,
-ClassSchedule, Payment và hướng dẫn frontend.
+các lượt tiếp theo hoàn tất Swagger/OpenAPI Auth, Class, Student, Enrollment,
+ClassSchedule, Payment; bước mới bổ sung User.name và API đổi tên tài khoản.
 Tiến độ được ghi ở system-design.md.
-Không triển khai endpoint mới, sửa schema hoặc đổi luồng authentication.

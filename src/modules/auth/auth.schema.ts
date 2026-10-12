@@ -15,6 +15,14 @@ export const registerSchema = z.strictObject({
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 
+export const updateProfileSchema = z.strictObject({
+  name: z.string().trim()
+    .min(1, 'Tên không được để trống')
+    .max(150, 'Tên không được vượt quá 150 ký tự'),
+});
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
 export const registrationIdSchema = z.string()
   .regex(/^[1-9]\d*$/)
   .transform(Number)

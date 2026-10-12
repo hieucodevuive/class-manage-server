@@ -128,8 +128,8 @@ test('Payment giữ schema tiền/tháng và bảo vệ lịch sử Enrollment',
 
     async function createEnrollment(suffix: string) {
       const user = await db.query(`
-        INSERT INTO "User" ("email", "passwordHash", "role", "status", "createdAt", "updatedAt")
-        VALUES ($1, 'test-fixture-no-login', 'TEACHER', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO "User" ("email", "name", "passwordHash", "role", "status", "createdAt", "updatedAt")
+        VALUES ($1, $1, 'test-fixture-no-login', 'TEACHER', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING "id"
       `, [`${prefix}-${suffix}@example.test`]);
       const teacherId: number = user.rows[0].id;

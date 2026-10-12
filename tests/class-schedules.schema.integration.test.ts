@@ -100,8 +100,8 @@ test('ClassSchedule có schema TIME đúng và bảo vệ quan hệ Class/Enroll
     assert.match(indexes.rows[0].indexdef, /CREATE INDEX .* USING btree \("classId"\)$/);
 
     const user = await db.query(`
-      INSERT INTO "User" ("email", "passwordHash", "role", "status", "createdAt", "updatedAt")
-      VALUES ($1, 'test-fixture-no-login', 'TEACHER', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO "User" ("email", "name", "passwordHash", "role", "status", "createdAt", "updatedAt")
+      VALUES ($1, $1, 'test-fixture-no-login', 'TEACHER', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING "id"
     `, [`${prefix}@example.test`]);
     const teacherId: number = user.rows[0].id;

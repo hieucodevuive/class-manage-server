@@ -16,7 +16,7 @@ Tài liệu này cập nhật giả định một giáo viên ở `backend-imple
 
 | Bảng logic | Danh sách trường |
 | --- | --- |
-| users | Giữ schema authentication hiện có; dùng `users.id` để xác định giáo viên |
+| users | Giữ schema authentication hiện có; dùng `users.id` để xác định giáo viên; thêm `name` theo yêu cầu ngày 2026-10-12 ở mục 22 |
 | classes | `id`, `teacher_id`, `name`, `grade`, `school_year`, `subject`, `tuition_fee`, `start_date`, `end_date`, `status`, `note`, `created_at`, `updated_at` |
 | students | `id`, `teacher_id`, `full_name`, `phone`, `parent_name`, `parent_phone`, `school`, `grade`, `date_of_birth`, `address`, `status`, `note`, `created_at`, `updated_at` |
 | class_schedules | `id`, `class_id`, `day_of_week`, `start_time`, `end_time`, `created_at`, `updated_at` |
@@ -117,7 +117,7 @@ Business routes tiếp tục dùng middleware auth/role hiện có. Vai trò `AD
 - Login chỉ cấp token cho `ACTIVE` sau khi mật khẩu đúng. Refresh chỉ cấp token mới
   cho `ACTIVE`; middleware kiểm tra trạng thái hiện tại của tài khoản trước khi
   cho dùng access token ở các API có xác thực. Response user giữ `id`, `email`,
-  `role`, không lộ `passwordHash` hoặc `status`.
+  `role` (bổ sung `name` ở mục 22), không lộ `passwordHash` hoặc `status`.
 
 ## 9. Enrollment và bảo vệ lịch sử (quyết định 2026-10-05)
 
@@ -496,3 +496,40 @@ Business routes tiếp tục dùng middleware auth/role hiện có. Vai trò `AD
 - Chưa kiểm tra render/Try it out trong trình duyệt vì quyền mở preview bị
   từ chối ở lượt trước; chi tiết kết quả ở mục 15 `docs/backend-status-report.md`.
   Tài liệu đã hoàn tất cho tất cả API hiện có; dừng sau lượt này.
+
+## 22. Tên hiển thị User (2026-10-12)
+
+- Theo yêu cầu của người dùng, thêm `User.name` kiểu TEXT, bắt buộc và không
+  có SQL default cố định. Tên khởi tạo là toàn bộ email đã lưu; đăng ký mới
+  dùng email đã trim/chuyển chữ thường. Tên có thể trùng, không dùng để login
+  hoặc xác định quyền sở hữu.
+- Migration `20261012110000_add_user_name` thêm cột nullable, backfill
+  `name = email`, kiểm tra không còn NULL rồi đặt NOT NULL trong một transaction.
+  Giữ nguyên ID/email/password/role/status và các quan hệ. Code tạo tài khoản,
+  seed và Prisma Client được cập nhật trước khi áp dụng bằng migrate deploy.
+  Seed gặp tài khoản đã tồn tại vẫn giữ nguyên tên người dùng đã đổi.
+- Đã áp dụng migration sau khi TypeScript đạt và server đang chạy đã có
+  contract mới. Trước/sau migration có 3 User: cả 3 có tên bằng email, không có
+  tên NULL; cột TEXT/NOT NULL/no default đúng thiết kế. Database đã cập nhật
+  đủ 11 migration, không reset hoặc chạy seed.
+- Thêm `PATCH /api/auth/me` vào module Auth hiện có: chỉ nhận `name`, trim và
+  kiểm tra 1–150 Unicode code point sau trim theo Zod đang cài. Trường lạ,
+  body rỗng, null/sai kiểu/tên toàn khoảng trắng trả 400. Backend lấy ID từ
+  middleware; truy vấn cập nhật theo ID này và trạng thái ACTIVE. Không cho sửa
+  email/password/role/status/ID hoặc chọn tài khoản khác.
+- Đăng ký/login/refresh/GET me/PATCH me trả public user `id`, `email`, `name`,
+  `role`. Danh sách chờ duyệt và response duyệt cũng có `name`; giữ các trường
+  trạng thái/thời gian vốn có. JWT, refresh cookie và logout giữ logic hiện tại.
+- OpenAPI hiện mô tả 30 operation trên 17 path, gồm 8 API Auth. Frontend cần
+  chạy lại generator và đọc tên từ user trả về. Chi tiết ở
+  `docs/user-profile-api.md`; kết quả kiểm tra thực tế ở
+  `docs/backend-status-report.md`.
+- TypeScript src và typecheck riêng Auth/E2E/Docs/hai seed đạt. Auth 6/6,
+  E2E 1/1, Class 2/2, schema Schedule 1/1, schema Payment 1/1 và Docs 1/1
+  đều đạt; tổng 12/12 trong lượt chạy cuối, không fail/skipped/cancelled.
+  Test tên đã đối chiếu và kiểm đúng cách Zod đếm Unicode code point.
+  Chưa chạy lại mọi bộ module; giới hạn typecheck rộng/trình duyệt được
+  ghi riêng trong báo cáo. Chỉ dọn fixture thử nghiệm, không reset hoặc seed.
+- Avatar là bước sau. Chưa thêm cột hoặc API upload/avatar ở lượt này.
+  Đề xuất Cloudinary để lưu/phân phối/xử lý ảnh và một ảnh mặc định dùng chung;
+  chưa cấu hình dịch vụ hoặc upload ảnh.

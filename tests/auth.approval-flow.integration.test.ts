@@ -22,10 +22,10 @@ test('ADMIN xem và duyệt đăng ký, sau đó giáo viên đăng nhập đư�
   try {
     const passwordHash = await bcrypt.hash(password, 12);
     const admin = await prisma.user.create({
-      data: { email: emails.admin, passwordHash, role: 'ADMIN', status: 'ACTIVE' },
+      data: { email: emails.admin, name: emails.admin, passwordHash, role: 'ADMIN', status: 'ACTIVE' },
     });
     await prisma.user.create({
-      data: { email: emails.activeTeacher, passwordHash, role: 'TEACHER', status: 'ACTIVE' },
+      data: { email: emails.activeTeacher, name: emails.activeTeacher, passwordHash, role: 'TEACHER', status: 'ACTIVE' },
     });
 
     server = app.listen(0, '127.0.0.1');
@@ -78,8 +78,9 @@ test('ADMIN xem và duyệt đăng ký, sau đó giáo viên đăng nhập đư�
     for (const [id, email] of [[idA, emails.pendingA], [idB, emails.pendingB]] as const) {
       const registration = registrations.find(user => user.id === id);
       assert.ok(registration);
-      assert.deepEqual(Object.keys(registration).sort(), ['createdAt', 'email', 'id', 'role', 'status']);
+      assert.deepEqual(Object.keys(registration).sort(), ['createdAt', 'email', 'id', 'name', 'role', 'status']);
       assert.equal(registration.email, email);
+      assert.ok(registration.name === email, 'Đăng ký chờ duyệt phải giữ name ban đầu bằng email');
       assert.equal(registration.role, 'TEACHER');
       assert.equal(registration.status, 'PENDING');
       assert.equal(typeof registration.createdAt, 'string');
@@ -94,12 +95,11 @@ test('ADMIN xem và duyệt đăng ký, sau đó giáo viên đăng nhập đư�
 
     const approval = await request(approvePath, 'PATCH', undefined, adminToken);
     assert.equal(approval.status, 200);
-    assert.deepEqual(approval.body.data.user, {
-      id: idA,
-      email: emails.pendingA,
-      role: 'TEACHER',
-      status: 'ACTIVE',
-    });
+    assert.ok(Object.keys(approval.body.data.user).sort().join('|') === 'email|id|name|role|status',
+      'Duyệt tài khoản phải trả đúng các field công khai');
+    assert.ok(approval.body.data.user.id === idA && approval.body.data.user.email === emails.pendingA
+      && approval.body.data.user.name === emails.pendingA && approval.body.data.user.role === 'TEACHER'
+      && approval.body.data.user.status === 'ACTIVE', 'Duyệt phải giữ name và kích hoạt đúng giáo viên');
     assert.equal((await request(approvePath, 'PATCH', undefined, adminToken)).status, 409);
     assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: idA } })).status, 'ACTIVE');
 

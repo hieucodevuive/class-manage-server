@@ -27,6 +27,7 @@ test('Luồng HTTP đăng ký, duyệt, quản lý lớp, thu học phí và ngh
     const admin = await prisma.user.create({
       data: {
         email: emails.admin,
+        name: emails.admin,
         passwordHash: await bcrypt.hash(password, 4),
         role: 'ADMIN',
         status: 'ACTIVE',
@@ -63,9 +64,9 @@ test('Luồng HTTP đăng ký, duyệt, quản lý lớp, thu học phí và ngh
     }
 
     function publicUser(user: Record<string, unknown>, id: number, email: string, role: string) {
-      assert.deepEqual(Object.keys(user).sort(), ['email', 'id', 'role']);
+      assert.deepEqual(Object.keys(user).sort(), ['email', 'id', 'name', 'role']);
       // Boolean assertions tránh in giá trị bí mật nếu response Auth bị hồi quy.
-      assert.ok(user.id === id && user.email === email && user.role === role, 'Thông tin User công khai phải khớp fixture');
+      assert.ok(user.id === id && user.email === email && user.name === email && user.role === role, 'Thông tin User công khai phải khớp fixture');
     }
 
     async function register(email: string) {
@@ -77,8 +78,9 @@ test('Luồng HTTP đăng ký, duyệt, quản lý lớp, thu học phí và ngh
       assert.ok(Number.isInteger(id) && id > 0, 'Register phải trả User ID hợp lệ');
       publicUser(response.body.data.user, id, email, 'TEACHER');
       assert.ok(response.cookie === null, 'Register không được cấp refresh cookie');
-      const stored = await prisma.user.findUniqueOrThrow({ where: { id }, select: { role: true, status: true } });
-      assert.deepEqual(stored, { role: 'TEACHER', status: 'PENDING' });
+      const stored = await prisma.user.findUniqueOrThrow({ where: { id }, select: { role: true, status: true, name: true } });
+      assert.ok(stored.role === 'TEACHER' && stored.status === 'PENDING' && stored.name === email,
+        'Đăng ký phải lưu TEACHER/PENDING với name bằng email');
       const denied = await request('/auth/login', 'POST', undefined, { email, password });
       assert.equal(denied.status, 403);
       assert.ok(denied.body.success === false && denied.body.data === undefined, 'PENDING không được cấp token');
@@ -107,11 +109,13 @@ test('Luồng HTTP đăng ký, duyệt, quản lý lớp, thu học phí và ngh
     for (const id of [idA, idB]) {
       const registration = pending.data.users.find((user: { id: number }) => user.id === id);
       assert.ok(registration, 'ADMIN phải thấy đăng ký fixture đang chờ duyệt');
-      assert.deepEqual(Object.keys(registration).sort(), ['createdAt', 'email', 'id', 'role', 'status']);
+      assert.deepEqual(Object.keys(registration).sort(), ['createdAt', 'email', 'id', 'name', 'role', 'status']);
       assert.ok(registration.status === 'PENDING' && registration.role === 'TEACHER');
+      assert.ok(registration.name === registration.email, 'Danh sách chờ duyệt phải giữ name ban đầu');
       const approval = await expectRequest(`/auth/registrations/${id}/approve`, 'PATCH', adminToken);
-      assert.deepEqual(Object.keys(approval.data.user).sort(), ['email', 'id', 'role', 'status']);
+      assert.deepEqual(Object.keys(approval.data.user).sort(), ['email', 'id', 'name', 'role', 'status']);
       assert.ok(approval.data.user.id === id && approval.data.user.status === 'ACTIVE');
+      assert.ok(approval.data.user.name === registration.name, 'Duyệt không được thay name');
     }
     const tokenA = await login(idA, emails.a, 'TEACHER');
     const tokenB = await login(idB, emails.b, 'TEACHER');

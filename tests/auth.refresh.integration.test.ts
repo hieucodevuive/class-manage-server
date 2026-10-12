@@ -21,6 +21,7 @@ test('Refresh đổi token, chặn replay/hết hạn và chỉ cho một reques
     const user = await prisma.user.create({
       data: {
         email,
+        name: email,
         passwordHash: await bcrypt.hash(password, 4),
         role: 'TEACHER',
         status: 'ACTIVE',
@@ -50,9 +51,9 @@ test('Refresh đổi token, chặn replay/hết hạn và chỉ cho một reques
       assert.ok(body.message === message, 'Response phải dùng thông báo lỗi đã quy định');
     }
 
-    function assertPublicUser(value: { id: number; email: string; role: string }) {
-      assert.deepEqual(Object.keys(value).sort(), ['email', 'id', 'role']);
-      assert.ok(value.id === user.id && value.email === email && value.role === 'TEACHER',
+    function assertPublicUser(value: { id: number; email: string; name: string; role: string }) {
+      assert.deepEqual(Object.keys(value).sort(), ['email', 'id', 'name', 'role']);
+      assert.ok(value.id === user.id && value.email === email && value.name === email && value.role === 'TEACHER',
         'Response chỉ trả public user của tài khoản fixture');
     }
 

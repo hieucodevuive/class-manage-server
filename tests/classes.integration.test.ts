@@ -264,6 +264,7 @@ test('Class CRUD theo model đầy đủ', { timeout: 30000 }, async () => {
     const otherUser = await prisma.user.create({
       data: {
         email: `${prefix}@example.test`,
+        name: `${prefix}@example.test`,
         passwordHash: 'test-fixture-no-login',
         role: 'TEACHER',
         status: 'ACTIVE',
@@ -353,11 +354,11 @@ test('DELETE Class giữ lịch sử Enrollment và quyền sở hữu', { timeo
 
   try {
     const userA = await prisma.user.create({
-      data: { email: `${prefix}-a@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+      data: { email: `${prefix}-a@example.test`, name: `${prefix}-a@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
     });
     userIds.push(userA.id);
     const userB = await prisma.user.create({
-      data: { email: `${prefix}-b@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+      data: { email: `${prefix}-b@example.test`, name: `${prefix}-b@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
     });
     userIds.push(userB.id);
 

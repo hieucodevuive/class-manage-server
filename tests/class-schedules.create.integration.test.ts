@@ -18,7 +18,7 @@ test('POST /api/classes/:classId/schedules kiểm tra giờ học và quyền s�
   try {
     async function createUser(suffix: string, role: 'TEACHER' | 'ADMIN' = 'TEACHER', status: 'ACTIVE' | 'PENDING' = 'ACTIVE') {
       const user = await prisma.user.create({
-        data: { email: `${prefix}-${suffix}@example.test`, passwordHash: 'test-fixture-no-login', role, status },
+        data: { email: `${prefix}-${suffix}@example.test`, name: `${prefix}-${suffix}@example.test`, passwordHash: 'test-fixture-no-login', role, status },
       });
       userIds.push(user.id);
       return user;

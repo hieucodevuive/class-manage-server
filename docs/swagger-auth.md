@@ -8,11 +8,11 @@ Với backend chạy cổng 5000:
 - Swagger UI: `http://localhost:5000/api/docs/`.
 - OpenAPI JSON: `http://localhost:5000/api/docs/openapi.json`.
 
-Trang tài liệu mô tả toàn bộ **29 API nghiệp vụ hiện có**:
+Trang tài liệu mô tả toàn bộ **30 API hiện có**, trên **17 path OpenAPI**:
 
 | Nhóm | Số API | Hướng dẫn |
 | --- | --- | --- |
-| Auth / AuthAdmin | 7 | [auth-approval.md](auth-approval.md) |
+| Auth / AuthAdmin | 8 | [auth-approval.md](auth-approval.md), [user-profile-api.md](user-profile-api.md) |
 | Classes | 5 | [class-api.md](class-api.md) |
 | Students | 5 | [student-api.md](student-api.md) |
 | Enrollments | 3 | [enrollment-api.md](enrollment-api.md) |
@@ -55,12 +55,33 @@ file tài liệu.
 | ADMIN duyệt | `PATCH /api/auth/registrations/:id/approve` | Không cần body; ID User là số nguyên, lấy từ danh sách đăng ký |
 | Đăng nhập | `POST /api/auth/login` | Gửi email/password; giữ `data.accessToken` và `data.user` trong trạng thái ứng dụng |
 | Lấy User | `GET /api/auth/me` | Gửi `Authorization: Bearer <accessToken>` |
-| Làm mới phiên | `POST /api/auth/refresh` | Trình duyệt gửi cookie; cập nhật access token từ response |
+| Đổi tên | `PATCH /api/auth/me` | Bearer token; gửi chỉ `name`, cập nhật User từ response |
+| Làm mới phiên | `POST /api/auth/refresh` | Trình duyệt gửi cookie; cập nhật access token và User từ response |
 | Đăng xuất | `POST /api/auth/logout` | Trình duyệt gửi cookie; xóa access token/User đang giữ trên FE |
 
 Register luôn tạo TEACHER/PENDING, không nhận role/status. ADMIN chỉ duyệt
 tài khoản; các API nghiệp vụ vẫn giới hạn dữ liệu của chính người đăng nhập.
 Chi tiết nghiệp vụ và giới hạn phiên hiện có ở [auth-approval.md](auth-approval.md).
+
+### Tên hiển thị và type frontend
+
+`data.user` của register/login/refresh/GET `/auth/me` và PATCH `/auth/me` có
+`id`, `email`, `name`, `role`. Register vẫn chỉ nhận email/password, tên ban
+đầu lấy từ email. Danh sách đăng ký chờ thêm `status`, `createdAt`; response
+duyệt thêm `status`.
+
+PATCH `/auth/me` chỉ nhận `name`: trim rồi kiểm 1–150 Unicode code points,
+tương đương `Array.from(name.trim()).length`. Field khác trả 400; gửi thành
+công cập nhật User hiển thị từ `data.user`. Không cần refresh phiên riêng
+chỉ để lấy tên mới, vì đổi tên
+không đổi JWT/cookie. Chi tiết ở [user-profile-api.md](user-profile-api.md).
+
+Sau khi backend/OpenAPI được cập nhật và phục vụ contract mới, chạy
+`npm run api:generate` trong project frontend `class-manage` để sinh lại
+`types/generated/api.ts`. Không sửa tay file generated. Cập nhật service/
+state sử dụng public User mới và response của PATCH; refresh thành công cũng
+nên thay User đang giữ bằng `data.user`. Việc sinh type không tự nối API với
+màn hình hồ sơ.
 
 ### Fetch mẫu cho FE
 
@@ -101,7 +122,7 @@ JWT còn hạn vẫn theo chính sách hiện tại, nên FE phải bỏ access 
 
 ## Cập nhật tài liệu
 
-- `src/docs/auth.openapi.ts`: mô tả path, body, response và ví dụ của Auth.
+- `src/docs/auth.openapi.ts`: mô tả 8 API Auth, public User có name và PATCH tên.
 - `src/docs/class.openapi.ts`: mô tả 5 API CRUD Class, tiền/ngày và ownership.
 - `src/docs/student.openapi.ts`: mô tả 5 API CRUD Student, trường nullable và ownership.
 - `src/docs/enrollment.openapi.ts`: mô tả 3 API ghi danh/nghỉ lớp, Student lồng nhau và bảo vệ lịch sử.

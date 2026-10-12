@@ -40,7 +40,7 @@ const adminForbidden = errorResponse('Tài khoản chưa ACTIVE hoặc không c�
   wrongRole: errorExample('Bạn không có quyền thực hiện thao tác này'),
 });
 
-const publicUserExample = { id: 101, email: 'teacher@example.com', role: 'TEACHER' };
+const publicUserExample = { id: 101, email: 'teacher@example.com', name: 'teacher@example.com', role: 'TEACHER' };
 const accessTokenExample = 'ACCESS_TOKEN_FROM_LOGIN_OR_REFRESH';
 
 const refreshCookieHeader = {
@@ -91,7 +91,7 @@ export const authSchemas = {
     type: 'object',
     additionalProperties: false,
     required: ['email', 'password'],
-    description: 'Chỉ nhận email và password. Field lạ, kể cả role/status, bị từ chối; các field không nhận null.',
+    description: 'Chỉ nhận email và password. Field lạ, kể cả name/avatar/role/status, bị từ chối; các field không nhận null. Backend tự đặt name ban đầu bằng email đã chuẩn hóa.',
     properties: {
       email: {
         type: 'string',
@@ -104,11 +104,11 @@ export const authSchemas = {
         format: 'password',
         writeOnly: true,
         description: [
-          'Không trim. Tối thiểu 12 đơn vị UTF-16 theo độ dài chuỗi JavaScript (Zod hiện tại),',
+          'Không trim. Tối thiểu 12 Unicode code point theo Zod hiện tại,',
           'tối đa 72 byte UTF-8. Giới hạn byte không tương đương maxLength:72 ký tự.',
           'Các extension bên dưới mô tả giới hạn runtime; server vẫn kiểm tra cả hai.',
         ].join(' '),
-        'x-minUtf16Length': 12,
+        'x-minCodePoints': 12,
         'x-maxUtf8Bytes': 72,
         example: 'example-only-password',
       },
@@ -139,32 +139,35 @@ export const authSchemas = {
   AuthUser: {
     type: 'object',
     additionalProperties: false,
-    required: ['id', 'email', 'role'],
-    description: 'User công khai của login/refresh/me; không có status hoặc passwordHash.',
+    required: ['id', 'email', 'name', 'role'],
+    description: 'User công khai của login/refresh/GET và PATCH me; không có status, avatar hoặc passwordHash. name ban đầu bằng email được lưu; cập nhật tên riêng bằng PATCH /auth/me.',
     properties: {
       id: { type: 'integer', format: 'int32', minimum: 1, example: 101 },
       email: { type: 'string', format: 'email', example: 'teacher@example.com' },
+      name: { type: 'string', description: 'Tên hiển thị hiện tại. Ban đầu bằng email được lưu; có thể đổi sau khi tài khoản ACTIVE. Không áp giới hạn PATCH cho tên khởi tạo/backfill từ email cũ.', example: 'teacher@example.com' },
       role: { type: 'string', enum: ['TEACHER', 'ADMIN'] },
     },
   },
   AuthRegisteredUser: {
     type: 'object',
     additionalProperties: false,
-    required: ['id', 'email', 'role'],
-    description: 'Đăng ký công khai luôn tạo TEACHER/PENDING; response không trả status.',
+    required: ['id', 'email', 'name', 'role'],
+    description: 'Đăng ký công khai luôn tạo TEACHER/PENDING; name bằng email đã trim/chuyển chữ thường. Response không trả status/avatar.',
     properties: {
       id: { type: 'integer', format: 'int32', minimum: 1, example: 101 },
       email: { type: 'string', format: 'email', example: 'teacher@example.com' },
+      name: { type: 'string', description: 'Tên ban đầu bằng email đã chuẩn hóa; client không gửi name khi đăng ký.', example: 'teacher@example.com' },
       role: { type: 'string', enum: ['TEACHER'] },
     },
   },
   AuthPendingRegistration: {
     type: 'object',
     additionalProperties: false,
-    required: ['id', 'email', 'role', 'status', 'createdAt'],
+    required: ['id', 'email', 'name', 'role', 'status', 'createdAt'],
     properties: {
       id: { type: 'integer', format: 'int32', minimum: 1, example: 101 },
       email: { type: 'string', format: 'email', example: 'teacher@example.com' },
+      name: { type: 'string', description: 'Tên hiển thị hiện tại, ban đầu bằng email được lưu.', example: 'teacher@example.com' },
       role: { type: 'string', enum: ['TEACHER'] },
       status: { type: 'string', enum: ['PENDING'] },
       createdAt: { type: 'string', format: 'date-time', example: '2026-10-10T00:00:00.000Z' },
@@ -173,10 +176,11 @@ export const authSchemas = {
   AuthApprovedRegistration: {
     type: 'object',
     additionalProperties: false,
-    required: ['id', 'email', 'role', 'status'],
+    required: ['id', 'email', 'name', 'role', 'status'],
     properties: {
       id: { type: 'integer', format: 'int32', minimum: 1, example: 101 },
       email: { type: 'string', format: 'email', example: 'teacher@example.com' },
+      name: { type: 'string', description: 'Tên hiển thị được giữ nguyên khi duyệt.', example: 'teacher@example.com' },
       role: { type: 'string', enum: ['TEACHER'] },
       status: { type: 'string', enum: ['ACTIVE'] },
     },
@@ -250,6 +254,48 @@ export const authSchemas = {
       },
     },
   },
+  AuthUpdateProfileRequest: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['name'],
+    description: 'Strict: chỉ nhận name, bắt buộc và không nhận null. Không cho cập nhật email, role, status, ID, password, avatar hoặc field lạ. ID tài khoản lấy từ access token đã xác thực.',
+    properties: {
+      name: {
+        type: 'string',
+        minLength: 1,
+        pattern: '\\S',
+        'x-minTrimmedCodePoints': 1,
+        'x-maxTrimmedCodePoints': 150,
+        description: 'Backend trim hai đầu rồi kiểm tên có từ 1 đến 150 Unicode code point theo Zod hiện tại. Giới hạn áp dụng sau trim, không áp maxLength cho toàn bộ chuỗi JSON chưa trim. Chỉ có khoảng trắng trả 400.',
+        example: 'Nguyễn Văn An',
+      },
+    },
+  },
+  AuthUpdateProfileValidationError: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['success', 'message', 'errors'],
+    properties: {
+      success: { type: 'boolean', enum: [false] },
+      message: { type: 'string', enum: ['Thông tin tài khoản không hợp lệ'] },
+      errors: { type: 'array', minItems: 1, items: schemaRef('AuthValidationIssue') },
+    },
+  },
+  AuthUpdateProfileResponse: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['success', 'message', 'data'],
+    properties: {
+      success: { type: 'boolean', enum: [true] },
+      message: { type: 'string', enum: ['Cập nhật tên thành công'] },
+      data: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['user'],
+        properties: { user: schemaRef('AuthUser') },
+      },
+    },
+  },
   AuthLogoutResponse: {
     type: 'object',
     additionalProperties: false,
@@ -300,7 +346,7 @@ export const authPaths = {
         'API công khai, luôn tạo role TEACHER và status PENDING.',
         'Không cấp access token hoặc refresh cookie; cần ADMIN duyệt trước khi đăng nhập.',
         'Email được trim/chuyển chữ thường; email đã dùng, kể cả khác hoa/thường, trả 409.',
-        'Chỉ nhận email/password; không cho client chọn role/status.',
+        'Backend tự đặt name ban đầu bằng email đã chuẩn hóa; chỉ nhận email/password, không cho client chọn name/avatar/role/status.',
       ].join(' '),
       security: [],
       requestBody: {
@@ -480,16 +526,65 @@ export const authPaths = {
       tags: ['Auth'],
       operationId: 'authMe',
       summary: 'Đọc thông tin tài khoản đang đăng nhập',
-      description: 'Yêu cầu access JWT hợp lệ và tài khoản đang ACTIVE. Chỉ trả id/email/role của tài khoản đó; query không được dùng.',
+      description: 'Yêu cầu access JWT hợp lệ và tài khoản đang ACTIVE. Chỉ trả id/email/name/role hiện tại của tài khoản đó; tên đọc từ database, không lấy từ JWT. Body/query không được dùng.',
       security: [{ bearerAuth: [] }],
       responses: {
         ...parserResponses,
         '200': {
-          description: 'Thông tin user hiện tại, không có message/status/passwordHash.',
+          description: 'Thông tin user hiện tại có name, không có message/status/avatar/passwordHash.',
           content: {
             'application/json': {
               schema: schemaRef('AuthMeResponse'),
               example: { success: true, data: { user: publicUserExample } },
+            },
+          },
+        },
+        '401': bearerUnauthorized,
+        '403': accountPending,
+      },
+    },
+    patch: {
+      tags: ['Auth'],
+      operationId: 'authUpdateProfile',
+      summary: 'Cập nhật tên tài khoản đang đăng nhập',
+      description: [
+        'Yêu cầu access JWT hợp lệ và tài khoản ACTIVE; chỉ cập nhật chính tài khoản được middleware xác thực.',
+        'Không nhận ID tài khoản từ URL/body/query, không mở API sửa tên người khác. TEACHER và ADMIN cập nhật tên của mình theo cùng luồng.',
+        'Body strict chỉ nhận name bắt buộc; trim hai đầu rồi kiểm từ 1 đến 150 Unicode code point. Không gửi name ở đăng ký: tên ban đầu bằng email được lưu.',
+        'Không đổi email, role, status, mật khẩu, ownership, access token hoặc refresh cookie; avatar chưa được triển khai và field lạ trả 400.',
+        'Thành công trả user hiện tại có id/email/name/role. Tài khoản không còn tồn tại trả 401; PENDING bị middleware chặn 403. Không dùng query.',
+      ].join(' '),
+      security: [{ bearerAuth: [] }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: schemaRef('AuthUpdateProfileRequest'),
+            example: { name: 'Nguyễn Văn An' },
+          },
+        },
+      },
+      responses: {
+        ...parserResponses,
+        '200': {
+          description: 'Tên đã được trim và lưu; không cấp token hoặc đặt refresh cookie.',
+          content: {
+            'application/json': {
+              schema: schemaRef('AuthUpdateProfileResponse'),
+              example: { success: true, message: 'Cập nhật tên thành công', data: { user: { ...publicUserExample, name: 'Nguyễn Văn An' } } },
+            },
+          },
+        },
+        '400': {
+          description: 'Body thiếu/sai/rỗng/field lạ hoặc tên không hợp lệ có errors; JSON sai cú pháp/null bị parser từ chối không có errors.',
+          content: {
+            'application/json': {
+              schema: { oneOf: [schemaRef('AuthUpdateProfileValidationError'), schemaRef('AuthError')] },
+              examples: {
+                unknownField: { value: { success: false, message: 'Thông tin tài khoản không hợp lệ', errors: [{ field: 'body', message: 'Unrecognized key: "avatar"' }] } },
+                invalidName: { value: { success: false, message: 'Thông tin tài khoản không hợp lệ', errors: [{ field: 'name', message: 'Tên không được để trống' }] } },
+                malformedJson: errorExample('Body JSON không hợp lệ'),
+              },
             },
           },
         },

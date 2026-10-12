@@ -22,9 +22,9 @@ test('Logout chỉ xóa phiên được gửi, xóa cookie đúng và giữ các
     assert.ok(Object.keys(value).sort().join('|') === [...expected].sort().join('|'), message);
   }
 
-  function assertPublicUser(actual: unknown, expected: { id: number; email: string; role: string }) {
-    assertKeys(actual, ['id', 'email', 'role'], 'User chỉ được chứa các field công khai');
-    assert.ok(actual.id === expected.id && actual.email === expected.email && actual.role === expected.role,
+  function assertPublicUser(actual: unknown, expected: { id: number; email: string; name: string; role: string }) {
+    assertKeys(actual, ['id', 'email', 'name', 'role'], 'User chỉ được chứa các field công khai');
+    assert.ok(actual.id === expected.id && actual.email === expected.email && actual.name === expected.name && actual.role === expected.role,
       'User phải đúng tài khoản đang được xác thực');
   }
 
@@ -66,9 +66,10 @@ test('Logout chỉ xóa phiên được gửi, xóa cookie đúng và giữ các
     async function createTeacher(suffix: string) {
       const user = await prisma.user.create({ data: {
         email: `${prefix}-${suffix}@example.test`, passwordHash, role: 'TEACHER', status: 'ACTIVE',
+        name: `${prefix}-${suffix}@example.test`,
       } });
       userIds.push(user.id);
-      return { id: user.id, email: user.email, role: 'TEACHER' as const };
+      return { id: user.id, email: user.email, name: user.name, role: 'TEACHER' as const };
     }
     const userA = await createTeacher('a');
     const userB = await createTeacher('b');

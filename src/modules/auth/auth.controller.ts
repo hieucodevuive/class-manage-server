@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express';
-import { loginSchema, registerSchema, registrationIdSchema } from './auth.schema';
-import { approveRegistration, authenticateUser, getCurrentUser, issueRefreshToken, listPendingRegistrations, logoutSession, refreshSession, registerTeacher } from './auth.service';
+import { loginSchema, registerSchema, registrationIdSchema, updateProfileSchema } from './auth.schema';
+import { approveRegistration, authenticateUser, getCurrentUser, issueRefreshToken, listPendingRegistrations, logoutSession, refreshSession, registerTeacher, updateCurrentUser } from './auth.service';
 import { createAccessToken, verifyAccessToken  } from '../../utils/jwt';
 import { env } from '../../config/env';
 
@@ -147,6 +147,39 @@ export const meController: RequestHandler = async (_req, res) => {
 
   res.json({
     success: true,
+    data: { user },
+  });
+};
+
+export const updateMeController: RequestHandler = async (req, res) => {
+  const auth: ReturnType<typeof verifyAccessToken> | undefined = res.locals.auth;
+  if (!auth) {
+    res.status(401).json({ success: false, message: 'Chưa xác thực' });
+    return;
+  }
+
+  const result = updateProfileSchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({
+      success: false,
+      message: 'Thông tin tài khoản không hợp lệ',
+      errors: result.error.issues.map(issue => ({
+        field: issue.path.join('.') || 'body',
+        message: issue.message,
+      })),
+    });
+    return;
+  }
+
+  const user = await updateCurrentUser(auth.userId, result.data);
+  if (!user) {
+    res.status(401).json({ success: false, message: 'Tài khoản không còn tồn tại' });
+    return;
+  }
+
+  res.json({
+    success: true,
+    message: 'Cập nhật tên thành công',
     data: { user },
   });
 };

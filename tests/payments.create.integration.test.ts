@@ -21,7 +21,7 @@ test('POST /api/payments giữ snapshot học phí, chuẩn hóa tháng và gi�
   try {
     async function createUser(suffix: string, role: 'TEACHER' | 'ADMIN' = 'TEACHER', status: 'ACTIVE' | 'PENDING' = 'ACTIVE') {
       const user = await prisma.user.create({
-        data: { email: `${prefix}-${suffix}@example.test`, passwordHash: 'test-fixture-no-login', role, status },
+        data: { email: `${prefix}-${suffix}@example.test`, name: `${prefix}-${suffix}@example.test`, passwordHash: 'test-fixture-no-login', role, status },
       });
       userIds.push(user.id);
       return user;

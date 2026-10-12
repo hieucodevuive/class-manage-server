@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { Prisma } from '../../generated/prisma/client';
-import type { RegisterInput } from './auth.schema';
-import { activatePendingTeacher, deleteRefreshTokenByHash, findPendingRegistrations, findRefreshTokenByHash, findRegistrationState, findUserByEmail, findUserByEmailIgnoreCase, findUserById, findUserStatusById, insertPendingTeacher, rotateRefreshToken, saveRefreshToken } from './auth.repository';
+import type { RegisterInput, UpdateProfileInput } from './auth.schema';
+import { activatePendingTeacher, deleteRefreshTokenByHash, findPendingRegistrations, findRefreshTokenByHash, findRegistrationState, findUserByEmail, findUserByEmailIgnoreCase, findUserById, findUserStatusById, insertPendingTeacher, rotateRefreshToken, saveRefreshToken, updateUserName } from './auth.repository';
 import {
   createRefreshToken,
   hashRefreshToken,
@@ -62,6 +62,7 @@ export async function authenticateUser(email: string, password: string) {
     user: {
       id: user.id,
       email: user.email,
+      name: user.name,
       role: user.role,
     },
   };
@@ -69,6 +70,10 @@ export async function authenticateUser(email: string, password: string) {
 
 export function getCurrentUser(userId: number) {
   return findUserById(userId);
+}
+
+export function updateCurrentUser(userId: number, data: UpdateProfileInput) {
+  return updateUserName(userId, data.name);
 }
 
 export async function getAccountStatus(userId: number) {
@@ -125,6 +130,7 @@ export async function refreshSession(refreshToken: string) {
     user: {
       id: record.user.id,
       email: record.user.email,
+      name: record.user.name,
       role: record.user.role,
     },
     refreshToken: newRefreshToken,

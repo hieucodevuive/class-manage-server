@@ -20,6 +20,7 @@ test('POST /api/classes/:classId/students ghi danh đúng quyền sở hữu', {
       const user = await prisma.user.create({
         data: {
           email: `${prefix}-${suffix}@example.test`,
+          name: `${prefix}-${suffix}@example.test`,
           passwordHash: 'test-fixture-no-login',
           role: 'TEACHER',
           status: 'ACTIVE',

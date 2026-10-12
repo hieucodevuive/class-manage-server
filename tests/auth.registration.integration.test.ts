@@ -44,23 +44,24 @@ test('Đăng ký công khai chỉ tạo TEACHER/PENDING và không cấp token',
 
     const privilegeAttempt = await register({ email, password, role: 'ADMIN', status: 'ACTIVE' });
     assert.equal(privilegeAttempt.status, 400);
+    assert.equal((await register({ email, password, name: 'Tên client tự chọn' })).status, 400);
     assert.equal(await prisma.user.count({ where: { email } }), 0);
 
     const created = await register({ email: email.toUpperCase(), password });
     assert.equal(created.status, 201);
     assert.equal(created.cookie, null);
     assert.equal(created.body.success, true);
-    assert.deepEqual(created.body.data.user, {
-      id: created.body.data.user.id,
-      email,
-      role: 'TEACHER',
-    });
+    assert.ok(Object.keys(created.body.data.user).sort().join('|') === 'email|id|name|role',
+      'Đăng ký chỉ trả bốn field User công khai');
+    assert.ok(created.body.data.user.email === email && created.body.data.user.name === email
+      && created.body.data.user.role === 'TEACHER', 'User mới phải có name bằng email đã chuẩn hóa');
     assert.equal(typeof created.body.data.user.id, 'number');
     assert.equal(Object.hasOwn(created.body.data, 'accessToken'), false);
 
     const stored = await prisma.user.findUniqueOrThrow({ where: { email } });
     assert.equal(stored.status, 'PENDING');
     assert.equal(stored.role, 'TEACHER');
+    assert.ok(stored.name === email, 'DB phải lưu name bằng email đã chuẩn hóa');
     assert.notEqual(stored.passwordHash, password);
     assert.equal(await bcrypt.compare(password, stored.passwordHash), true);
 
@@ -71,6 +72,7 @@ test('Đăng ký công khai chỉ tạo TEACHER/PENDING và không cấp token',
     await prisma.user.create({
       data: {
         email: legacyEmail.toUpperCase(),
+        name: legacyEmail.toUpperCase(),
         passwordHash: stored.passwordHash,
         role: 'TEACHER',
         status: 'ACTIVE',

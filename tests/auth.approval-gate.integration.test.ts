@@ -16,11 +16,20 @@ test('Tài khoản PENDING không thể đăng nhập, refresh hoặc dùng acce
   const prefix = `auth-gate-test-${randomUUID()}`;
   const password = 'Test-password-123!';
 
+  function assertPublicUser(actual: unknown, expected: { id: number; email: string; name: string }) {
+    assert.ok(actual !== null && typeof actual === 'object' && !Array.isArray(actual), 'User phải là object công khai');
+    const user = actual as Record<string, unknown>;
+    assert.ok(Object.keys(user).sort().join('|') === 'email|id|name|role', 'User chỉ trả bốn field công khai');
+    assert.ok(user.id === expected.id && user.email === expected.email && user.name === expected.name
+      && user.role === 'TEACHER', 'Response phải đúng tài khoản fixture');
+  }
+
   try {
     const passwordHash = await bcrypt.hash(password, 12);
     const active = await prisma.user.create({
       data: {
         email: `${prefix}-active@example.test`,
+        name: `${prefix}-active@example.test`,
         passwordHash,
         role: 'TEACHER',
         status: 'ACTIVE',
@@ -30,6 +39,7 @@ test('Tài khoản PENDING không thể đăng nhập, refresh hoặc dùng acce
     const pending = await prisma.user.create({
       data: {
         email: `${prefix}-pending@example.test`,
+        name: `${prefix}-pending@example.test`,
         passwordHash,
         role: 'TEACHER',
       },
@@ -95,11 +105,7 @@ test('Tài khoản PENDING không thể đăng nhập, refresh hoặc dùng acce
 
     const activeLogin = await login(active.email, password);
     assert.equal(activeLogin.status, 200);
-    assert.deepEqual(activeLogin.body.data.user, {
-      id: active.id,
-      email: active.email,
-      role: 'TEACHER',
-    });
+    assertPublicUser(activeLogin.body.data.user, active);
     assert.equal(typeof activeLogin.body.data.accessToken, 'string');
     assert.ok(activeLogin.cookie?.startsWith('refreshToken='));
 
@@ -107,7 +113,7 @@ test('Tài khoản PENDING không thể đăng nhập, refresh hoặc dùng acce
       headers: { Authorization: `Bearer ${activeLogin.body.data.accessToken}` },
     });
     assert.equal(me.status, 200);
-    assert.deepEqual((await me.json()).data.user, activeLogin.body.data.user);
+    assertPublicUser((await me.json()).data.user, active);
 
     const activeCookie = activeLogin.cookie!.split(';')[0];
     const refreshed = await fetch(`${baseUrl}/api/auth/refresh`, {
@@ -116,7 +122,7 @@ test('Tài khoản PENDING không thể đăng nhập, refresh hoặc dùng acce
     });
     assert.equal(refreshed.status, 200);
     const refreshedBody = await refreshed.json();
-    assert.deepEqual(refreshedBody.data.user, activeLogin.body.data.user);
+    assertPublicUser(refreshedBody.data.user, active);
     assert.equal(typeof refreshedBody.data.accessToken, 'string');
     assert.ok(refreshed.headers.get('set-cookie')?.startsWith('refreshToken='));
 

@@ -42,8 +42,8 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
     const operations = Object.values(spec.paths).flatMap(path =>
       Object.entries(path as Record<string, { operationId: string }>).filter(([method]) => methods.includes(method))
         .map(([, operation]) => operation));
-    assert.equal(operations.length, 29);
-    assert.equal(new Set(operations.map(operation => operation.operationId)).size, 29);
+    assert.equal(operations.length, 30);
+    assert.equal(new Set(operations.map(operation => operation.operationId)).size, 30);
     const serialized = JSON.stringify(spec);
     assert.ok(!serialized.includes(env.JWT_SECRET), 'OpenAPI không được chứa JWT secret');
     assert.ok(!serialized.includes(env.DATABASE_URL), 'OpenAPI không được chứa database URL');
@@ -55,7 +55,8 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
       properties?: Record<string, Schema>; items?: Schema; required?: string[];
       nullable?: boolean; default?: unknown; minProperties?: number; enum?: unknown[];
       additionalProperties?: boolean;
-      minimum?: number; maximum?: number;
+      minimum?: number; maximum?: number; minLength?: number; maxLength?: number;
+      'x-minTrimmedCodePoints'?: number; 'x-maxTrimmedCodePoints'?: number;
       oneOf?: Schema[]; anyOf?: Schema[];
     };
     function resolveSchema(schema: Schema): Schema {
@@ -73,6 +74,73 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
     function responseProperties(path: string, method: string, status = '200') {
       return propertiesOf(spec.paths[path][method].responses[status].content['application/json'].schema);
     }
+
+    // name có trong mọi DTO tài khoản; các response vẫn loại secret/status/field avatar chưa triển khai.
+    const authOperationCount = Object.entries(spec.paths).filter(([path]) => path.startsWith('/auth/'))
+      .reduce((count, [, path]) => count + Object.keys(path as object).filter(method => methods.includes(method)).length, 0);
+    assert.equal(authOperationCount, 8);
+    assert.deepEqual(Object.keys(spec.paths['/auth/me']).filter(key => methods.includes(key)).sort(), ['get', 'patch']);
+    const authUserKeys = ['email', 'id', 'name', 'role'];
+    for (const [path, method, status] of [
+      ['/auth/register', 'post', '201'], ['/auth/login', 'post', '200'], ['/auth/refresh', 'post', '200'],
+      ['/auth/me', 'get', '200'], ['/auth/me', 'patch', '200'],
+    ] as const) {
+      const fields = responseProperties(path, method, status);
+      const userSchema = resolveSchema(propertiesOf(fields.data!).user!);
+      const userFields = propertiesOf(userSchema);
+      assert.deepEqual(Object.keys(userFields).sort(), authUserKeys, `${method} ${path} trả id/email/name/role`);
+      assert.deepEqual([...(userSchema.required ?? [])].sort(), authUserKeys);
+      assert.equal(resolveSchema(userFields.name!).type, 'string');
+      assert.ok(resolveSchema(userFields.name!).nullable !== true);
+      const example = spec.paths[path][method].responses[status].content['application/json'].example;
+      assert.deepEqual(Object.keys(example.data.user).sort(), authUserKeys);
+      assert.equal(typeof example.data.user.name, 'string');
+    }
+    for (const method of ['get', 'patch']) {
+      const operation = spec.paths['/auth/me'][method];
+      assert.deepEqual(operation.security, [{ bearerAuth: [] }]);
+      assert.ok(operation.responses['401'] && operation.responses['403']);
+      assert.equal(operation.responses['404'], undefined, 'Tài khoản mất trả 401, không 404');
+    }
+    const pendingData = propertiesOf(responseProperties('/auth/registrations/pending', 'get').data!);
+    const pendingSchema = resolveSchema(resolveSchema(pendingData.users!).items!);
+    const pendingKeys = ['createdAt', 'email', 'id', 'name', 'role', 'status'];
+    assert.deepEqual(Object.keys(propertiesOf(pendingSchema)).sort(), pendingKeys);
+    assert.deepEqual([...(pendingSchema.required ?? [])].sort(), pendingKeys);
+    const approvedData = propertiesOf(responseProperties('/auth/registrations/{id}/approve', 'patch').data!);
+    const approvedSchema = resolveSchema(approvedData.user!);
+    const approvedKeys = ['email', 'id', 'name', 'role', 'status'];
+    assert.deepEqual(Object.keys(propertiesOf(approvedSchema)).sort(), approvedKeys);
+    assert.deepEqual([...(approvedSchema.required ?? [])].sort(), approvedKeys);
+    const authRegisterBody = resolveSchema(spec.paths['/auth/register'].post.requestBody.content['application/json'].schema);
+    assert.deepEqual(Object.keys(propertiesOf(authRegisterBody)).sort(), ['email', 'password'], 'Đăng ký tự đặt tên từ email, không nhận tên/avatar');
+    assert.equal(authRegisterBody.additionalProperties, false);
+    const profilePatch = spec.paths['/auth/me'].patch;
+    const profileBody = resolveSchema(profilePatch.requestBody.content['application/json'].schema);
+    assert.equal(profilePatch.requestBody.required, true);
+    assert.equal(profileBody.additionalProperties, false);
+    assert.deepEqual(profileBody.required, ['name']);
+    const profileFields = propertiesOf(profileBody);
+    assert.deepEqual(Object.keys(profileFields), ['name']);
+    const profileName = resolveSchema(profileFields.name!);
+    assert.equal(profileName.type, 'string');
+    assert.equal(profileName.minLength, 1);
+    assert.equal(profileName['x-minTrimmedCodePoints'], 1);
+    assert.equal(profileName['x-maxTrimmedCodePoints'], 150);
+    assert.equal(profileName.maxLength, undefined, 'Giới hạn tên áp dụng sau trim, không giới hạn độ dài chuỗi JSON còn khoảng trắng');
+    assert.equal(profileName.default, undefined);
+    assert.ok(profileName.nullable !== true);
+    assert.ok(typeof profileName.pattern === 'string');
+    assert.ok(!new RegExp(profileName.pattern).test('   '));
+    const profileResponse = responseProperties('/auth/me', 'patch');
+    assert.deepEqual(Object.keys(profileResponse).sort(), ['data', 'message', 'success']);
+    assert.deepEqual(resolveSchema(profileResponse.message!).enum, ['Cập nhật tên thành công']);
+    const profileErrors = profilePatch.responses['400'].content['application/json'].schema.oneOf.map(resolveSchema) as Schema[];
+    const profileValidation = profileErrors.find(schema => schema.properties?.errors);
+    assert.ok(profileValidation, 'PATCH mô tả lỗi validation có field/message');
+    assert.deepEqual(resolveSchema(propertiesOf(profileValidation).message!).enum, ['Thông tin tài khoản không hợp lệ']);
+    assert.deepEqual(Object.keys(propertiesOf(resolveSchema(propertiesOf(profileValidation).errors!).items!)).sort(), ['field', 'message']);
+
     const classOperations = [
       ['/classes', 'get'], ['/classes', 'post'],
       ['/classes/{id}', 'get'], ['/classes/{id}', 'patch'], ['/classes/{id}', 'delete'],
@@ -475,6 +543,7 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
       ['/auth/refresh', 'POST', undefined, 401],
       ['/auth/logout', 'POST', undefined, 200],
       ['/auth/me', 'GET', undefined, 401],
+      ['/auth/me', 'PATCH', { name: 'Nguyễn Văn An' }, 401],
       ['/auth/registrations/pending', 'GET', undefined, 401],
       ['/auth/registrations/1/approve', 'PATCH', undefined, 401],
       ['/classes', 'POST', {}, 401],
@@ -518,11 +587,31 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
                   : path.startsWith('/payments/') ? '/payments/{id}'
                     : path.endsWith('/approve') ? '/auth/registrations/{id}/approve' : path;
       assert.ok(spec.paths[documentedPath][method.toLowerCase()].responses[String(status)], 'Trạng thái HTTP thực tế phải được mô tả');
-      if (path.startsWith('/classes') || path.startsWith('/students') || path.startsWith('/payments')) {
+      if (path.startsWith('/classes') || path.startsWith('/students') || path.startsWith('/payments') || path === '/auth/me') {
         const denied = await response.json();
         assert.deepEqual(Object.keys(denied).sort(), ['message', 'success']);
         assert.ok(denied.success === false && denied.message === 'Thiếu access token', 'API nghiệp vụ phải chặn trước khi truy vấn/ghi DB');
       }
+    }
+    // Lỗi JSON được parser xử lý trước auth; JWT sai bị chặn trước truy vấn tài khoản.
+    for (const [body, authorization, status, message] of [
+      ['{"name":}', undefined, 400, 'Body JSON không hợp lệ'],
+      ['{"name":"Nguyễn Văn An"}', 'Bearer invalid-access-token', 401, 'Access token không hợp lệ hoặc đã hết hạn'],
+    ] as const) {
+      const response = await fetch(`${baseUrl}/api/auth/me`, {
+        method: 'PATCH',
+        headers: {
+          Origin: env.FRONTEND_ORIGIN,
+          'Content-Type': 'application/json',
+          ...(authorization === undefined ? {} : { Authorization: authorization }),
+        },
+        body,
+      });
+      assert.equal(response.status, status);
+      assert.equal(response.headers.get('access-control-allow-origin'), env.FRONTEND_ORIGIN);
+      assert.equal(response.headers.get('access-control-allow-credentials'), 'true');
+      assert.deepEqual(await response.json(), { success: false, message });
+      assert.ok(profilePatch.responses[String(status)], 'Lỗi HTTP PATCH thực tế phải có trong Swagger');
     }
     for (const path of ['/api/docs/missing-docs-route', '/api/missing-business-route']) {
       const response = await get(path);

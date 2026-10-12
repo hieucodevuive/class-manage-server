@@ -15,11 +15,11 @@ test('PATCH và DELETE /api/students/:id giới hạn theo giáo viên', { timeo
 
   try {
     const userA = await prisma.user.create({
-      data: { email: `${prefix}-a@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+      data: { email: `${prefix}-a@example.test`, name: `${prefix}-a@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
     });
     userIds.push(userA.id);
     const userB = await prisma.user.create({
-      data: { email: `${prefix}-b@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+      data: { email: `${prefix}-b@example.test`, name: `${prefix}-b@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
     });
     userIds.push(userB.id);
     const tokenA = createAccessToken({ id: userA.id, role: 'TEACHER' });
@@ -173,11 +173,11 @@ test('DELETE Student giữ lịch sử Enrollment', { timeout: 30000 }, async ()
 
   try {
     const userA = await prisma.user.create({
-      data: { email: `${prefix}-a@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+      data: { email: `${prefix}-a@example.test`, name: `${prefix}-a@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
     });
     userIds.push(userA.id);
     const userB = await prisma.user.create({
-      data: { email: `${prefix}-b@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+      data: { email: `${prefix}-b@example.test`, name: `${prefix}-b@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
     });
     userIds.push(userB.id);
     const classA = await prisma.class.create({

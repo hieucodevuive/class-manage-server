@@ -18,11 +18,12 @@ export function insertPendingTeacher(email: string, passwordHash: string) {
   return prisma.user.create({
     data: {
       email,
+      name: email,
       passwordHash,
       role: 'TEACHER',
       status: 'PENDING',
     },
-    select: { id: true, email: true, role: true },
+    select: { id: true, email: true, name: true, role: true },
   });
 }
 
@@ -30,7 +31,7 @@ export function findPendingRegistrations() {
   return prisma.user.findMany({
     where: { role: 'TEACHER', status: 'PENDING' },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    select: { id: true, email: true, role: true, status: true, createdAt: true },
+    select: { id: true, email: true, name: true, role: true, status: true, createdAt: true },
   });
 }
 
@@ -39,7 +40,7 @@ export async function activatePendingTeacher(id: number) {
     return await prisma.user.update({
       where: { id, role: 'TEACHER', status: 'PENDING' },
       data: { status: 'ACTIVE' },
-      select: { id: true, email: true, role: true, status: true },
+      select: { id: true, email: true, name: true, role: true, status: true },
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
@@ -62,6 +63,7 @@ export function findUserById(id: number) {
     select: {
       id: true,
       email: true,
+      name: true,
       role: true,
     },
   });
@@ -72,6 +74,21 @@ export function findUserStatusById(id: number) {
     where: { id },
     select: { status: true },
   });
+}
+
+export async function updateUserName(id: number, name: string) {
+  try {
+    return await prisma.user.update({
+      where: { id, status: 'ACTIVE' },
+      data: { name },
+      select: { id: true, email: true, name: true, role: true },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export function saveRefreshToken(
@@ -98,6 +115,7 @@ export function findRefreshTokenByHash(tokenHash: string) {
         select: {
           id: true,
           email: true,
+          name: true,
           role: true,
           status: true,
         },

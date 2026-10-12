@@ -2,13 +2,13 @@
 
 Luồng hiện tại: giáo viên đăng ký → tài khoản `PENDING` → ADMIN duyệt → tài khoản `ACTIVE` và đăng nhập được. Tài khoản ADMIN được tạo bằng lệnh nội bộ; API đăng ký công khai không thể tạo ADMIN.
 
-Swagger UI cho 7 API Auth ở `/api/docs/`, OpenAPI JSON ở
+Swagger UI cho 8 API Auth ở `/api/docs/`, OpenAPI JSON ở
 `/api/docs/openapi.json`. Cách dùng Authorize, refresh cookie và kết nối FE
 được hướng dẫn trong [swagger-auth.md](swagger-auth.md).
 
 ## Tạo ADMIN lần đầu
 
-Đặt `SEED_ADMIN_EMAIL` và `SEED_ADMIN_PASSWORD` (ít nhất 12 ký tự) trong môi trường riêng rồi chạy `npm run seed:admin`. Script `prisma/seed-admin.ts` không đổi role/status của tài khoản đã tồn tại và không in mật khẩu. Đừng commit thông tin đăng nhập.
+Đặt `SEED_ADMIN_EMAIL` và `SEED_ADMIN_PASSWORD` (ít nhất 12 ký tự) trong môi trường riêng rồi chạy `npm run seed:admin`. Tài khoản mới có `name = email`. Script `prisma/seed-admin.ts` giữ tên, role/status của tài khoản đã tồn tại và không in mật khẩu. Seed giáo viên cũng chỉ gán tên bằng email khi tạo mới. Đừng commit thông tin đăng nhập.
 
 Ví dụ PowerShell, nhập mật khẩu qua lời nhắc thay vì ghi vào lịch sử lệnh:
 
@@ -29,9 +29,9 @@ Remove-Item Env:\SEED_ADMIN_EMAIL, Env:\SEED_ADMIN_PASSWORD
 | `GET /api/auth/registrations/pending` | Access token ADMIN | Danh sách giáo viên `PENDING`, cũ nhất trước |
 | `PATCH /api/auth/registrations/:id/approve` | Access token ADMIN | Chuyển đúng một giáo viên `PENDING` sang `ACTIVE` |
 
-Đăng ký nhận JSON `{"email":"teacher@example.com","password":"mật khẩu ít nhất 12 ký tự"}`. Email được chuẩn hóa về chữ thường; login chấp nhận cách nhập chữ hoa/thường của tài khoản mới. Mật khẩu tối đa 72 byte theo giới hạn của bcrypt. Client không được gửi `role` hoặc `status`. Email trùng, kể cả chỉ khác chữ hoa/thường, trả `409`. Response đăng ký chứa `data.user.id`, dùng ID này để duyệt.
+Đăng ký nhận JSON `{"email":"teacher@example.com","password":"mật khẩu ít nhất 12 ký tự"}`. Email được chuẩn hóa về chữ thường; login chấp nhận cách nhập chữ hoa/thường của tài khoản mới. Mật khẩu tối đa 72 byte theo giới hạn của bcrypt. Body strict chỉ nhận email/password; gửi thêm `name`, `role` hoặc `status` trả `400`. Backend gán `name = email` cho tài khoản mới. Email trùng, kể cả chỉ khác chữ hoa/thường, trả `409`. Response đăng ký chứa `data.user` gồm `id`, `email`, `name`, `role`; dùng ID này để duyệt.
 
-ADMIN đăng nhập bằng `POST /api/auth/login`, lấy `data.accessToken` và gửi header `Authorization: Bearer <accessToken>` khi gọi hai API quản trị. Danh sách chờ trả `data.users`, mỗi mục có `id`, `email`, `role`, `status`, `createdAt`; không trả mật khẩu hoặc hash. Duyệt thành công trả `200` với `data.user` gồm `id`, `email`, `role`, `status`. ID sai định dạng trả `400`, ID không thuộc giáo viên cần duyệt trả `404`, tài khoản đã duyệt trả `409`. Thiếu token trả `401`, tài khoản không phải ADMIN trả `403`.
+ADMIN đăng nhập bằng `POST /api/auth/login`, lấy `data.accessToken` và gửi header `Authorization: Bearer <accessToken>` khi gọi hai API quản trị. Danh sách chờ trả `data.users`, mỗi mục có `id`, `email`, `name`, `role`, `status`, `createdAt`; không trả mật khẩu hoặc hash. Duyệt thành công trả `200` với `data.user` gồm `id`, `email`, `name`, `role`, `status`. ID sai định dạng trả `400`, ID không thuộc giáo viên cần duyệt trả `404`, tài khoản đã duyệt trả `409`. Thiếu token trả `401`, tài khoản không phải ADMIN trả `403`.
 
 Sau khi được duyệt, giáo viên gọi lại `POST /api/auth/login` để lấy access token và refresh cookie. Không có email thông báo tự động; ADMIN hoặc giao diện cần thông báo cho giáo viên theo cách đang sử dụng.
 
@@ -44,6 +44,11 @@ Chạy `npm run test:auth` để kiểm tra luồng trên database hiện tại.
 | `POST /api/auth/refresh` | Cookie `refreshToken` | Token hợp lệ và User ACTIVE: 200, access token và refresh cookie mới |
 | `POST /api/auth/logout` | Cookie `refreshToken`, nếu có | 200, thu hồi phiên tương ứng và xóa cookie |
 | `GET /api/auth/me` | Bearer access token | Trả public user của tài khoản đã xác thực |
+| `PATCH /api/auth/me` | Bearer access token, tài khoản ACTIVE | Đổi tên của chính tài khoản; chỉ nhận `name` |
+
+Public user trong register/login/refresh/GET `/me` và PATCH `/me` gồm đúng
+`id`, `email`, `name`, `role`. Chỉ hai response quản trị nói trên thêm
+`status` và, với danh sách chờ, `createdAt`.
 
 - Refresh không yêu cầu Bearer token. Cookie thiếu/rỗng, token sai/đã dùng/
   hết hạn hoặc User PENDING trả 401; không cấp hoặc xóa cookie ở response lỗi.
@@ -55,6 +60,23 @@ Chạy `npm run test:auth` để kiểm tra luồng trên database hiện tại.
   trong quá khứ. Frontend cần xóa access token đang giữ sau khi logout.
 - Access JWT có hạn 15 phút; logout không thu hồi JWT đã cấp. Nếu User vẫn
   ACTIVE, JWT còn hạn vẫn dùng được. Đây là hành vi của luồng hiện tại.
+
+## Tên hiển thị của tài khoản
+
+Giáo viên hoặc ADMIN ACTIVE dùng `PATCH /api/auth/me` với
+`{"name":"Nguyễn Minh Anh"}`. Backend lấy User ID từ access token đã xác thực,
+trim tên và nhận từ 1 đến 150 Unicode code points, tương đương
+`Array.from(name.trim()).length`.
+Body chỉ có `name`; field lạ hoặc tên rỗng/null/sai kiểu/quá dài trả `400`.
+Thành công trả `200`, message `Cập nhật tên thành công` và `data.user`.
+Thiếu/sai/hết hạn token hoặc tài khoản đã mất trả `401`; PENDING trả `403`.
+Endpoint này không dùng ID trong URL và không có nhánh `404` cho tài khoản.
+
+Đổi tên không cấp access token hoặc refresh cookie mới. JWT hiện chỉ dùng
+User ID/role; FE cập nhật User đang hiển thị từ `data.user`, hoặc đọc lại
+GET `/api/auth/me`. Login và refresh tiếp theo cũng trả tên đang lưu.
+Hướng dẫn đầy đủ, migration và phạm vi avatar ở
+[user-profile-api.md](user-profile-api.md).
 
 ### Kiểm tra đã chạy (2026-10-10)
 

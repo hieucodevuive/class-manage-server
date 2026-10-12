@@ -16,11 +16,11 @@ test('POST /api/students tạo hồ sơ đúng giáo viên', { timeout: 30000 },
 
   try {
     const userA = await prisma.user.create({
-      data: { email: `${prefix}-a@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+      data: { email: `${prefix}-a@example.test`, name: `${prefix}-a@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
     });
     userIds.push(userA.id);
     const userB = await prisma.user.create({
-      data: { email: `${prefix}-b@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
+      data: { email: `${prefix}-b@example.test`, name: `${prefix}-b@example.test`, passwordHash: 'test-fixture-no-login', role: 'TEACHER', status: 'ACTIVE' },
     });
     userIds.push(userB.id);
     const tokenA = createAccessToken({ id: userA.id, role: 'TEACHER' });
