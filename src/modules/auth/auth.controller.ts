@@ -1,9 +1,8 @@
 import type { RequestHandler } from 'express';
-import { loginSchema, registerSchema, registrationIdSchema, updateProfileSchema } from './auth.schema';
+import { loginSchema, registerSchema, registrationIdSchema, updateProfileSchema, updateMultipartProfileSchema } from './auth.schema';
 import { approveRegistration, authenticateUser, getCurrentUser, issueRefreshToken, listPendingRegistrations, logoutSession, refreshSession, registerTeacher, updateCurrentUser } from './auth.service';
 import { createAccessToken, verifyAccessToken  } from '../../utils/jwt';
 import { env } from '../../config/env';
-import { updateCurrentUserAvatar } from './avatar.service';
 
 export const registerController: RequestHandler = async (req, res) => {
   const result = registerSchema.safeParse(req.body);
@@ -159,7 +158,8 @@ export const updateMeController: RequestHandler = async (req, res) => {
     return;
   }
 
-  const result = updateProfileSchema.safeParse(req.body);
+  const schema = req.is('multipart/form-data') ? updateMultipartProfileSchema : updateProfileSchema;
+  const result = schema.safeParse(req.body);
   if (!result.success) {
     res.status(400).json({
       success: false,
@@ -172,32 +172,17 @@ export const updateMeController: RequestHandler = async (req, res) => {
     return;
   }
 
-  const user = await updateCurrentUser(auth.userId, result.data);
-  if (!user) {
-    res.status(401).json({ success: false, message: 'Tài khoản không còn tồn tại' });
+  if (result.data.name === undefined && !req.file) {
+    res.status(400).json({
+      success: false,
+      message: 'Thông tin tài khoản không hợp lệ',
+      errors: [{ field: 'body', message: 'Cần gửi name hoặc một file avatar' }],
+    });
     return;
   }
-
-  res.json({
-    success: true,
-    message: 'Cập nhật tên thành công',
-    data: { user },
-  });
-};
-
-export const updateAvatarController: RequestHandler = async (req, res) => {
-  const auth: ReturnType<typeof verifyAccessToken> | undefined = res.locals.auth;
-  if (!auth) {
-    res.status(401).json({ success: false, message: 'Chưa xác thực' });
-    return;
-  }
-  if (!req.file) {
-    res.status(400).json({ success: false, message: 'Vui lòng gửi một file avatar' });
-    return;
-  }
-  const result = await updateCurrentUserAvatar(auth.userId, req.file);
-  if (result.status === 'updated') {
-    res.json({ success: true, message: 'Cập nhật avatar thành công', data: { user: result.user } });
+  const updated = await updateCurrentUser(auth.userId, result.data, req.file);
+  if (updated.status === 'updated') {
+    res.json({ success: true, message: 'Cập nhật thông tin tài khoản thành công', data: { user: updated.user } });
     return;
   }
   const failures = {
@@ -205,11 +190,11 @@ export const updateAvatarController: RequestHandler = async (req, res) => {
     pending: [403, 'Tài khoản đang chờ duyệt'],
     not_configured: [503, 'Dịch vụ avatar chưa được cấu hình'],
     upload_failed: [502, 'Không thể upload avatar, vui lòng thử lại'],
-    persistence_failed: [500, 'Không thể lưu avatar'],
+    persistence_failed: [500, 'Không thể lưu thông tin tài khoản'],
     conflict: [409, 'Avatar đã thay đổi, vui lòng tải lại và thử lại'],
-    invalid_image: [400, result.status === 'invalid_image' ? result.message : 'File ảnh không hợp lệ'],
+    invalid_image: [400, updated.status === 'invalid_image' ? updated.message : 'File ảnh không hợp lệ'],
   } as const;
-  const [status, message] = failures[result.status];
+  const [status, message] = failures[updated.status];
   res.status(status).json({ success: false, message });
 };
 

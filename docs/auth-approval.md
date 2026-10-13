@@ -2,7 +2,7 @@
 
 Luồng hiện tại: giáo viên đăng ký → tài khoản `PENDING` → ADMIN duyệt → tài khoản `ACTIVE` và đăng nhập được. Tài khoản ADMIN được tạo bằng lệnh nội bộ; API đăng ký công khai không thể tạo ADMIN.
 
-Swagger UI cho 9 API Auth ở `/api/docs/`, OpenAPI JSON ở
+Swagger UI cho 8 API Auth ở `/api/docs/`, OpenAPI JSON ở
 `/api/docs/openapi.json`. Cách dùng Authorize, refresh cookie và kết nối FE
 được hướng dẫn trong [swagger-auth.md](swagger-auth.md).
 
@@ -44,11 +44,10 @@ Chạy `npm run test:auth` để kiểm tra luồng trên database hiện tại.
 | `POST /api/auth/refresh` | Cookie `refreshToken` | Token hợp lệ và User ACTIVE: 200, access token và refresh cookie mới |
 | `POST /api/auth/logout` | Cookie `refreshToken`, nếu có | 200, thu hồi phiên tương ứng và xóa cookie |
 | `GET /api/auth/me` | Bearer access token | Trả public user của tài khoản đã xác thực |
-| `PATCH /api/auth/me` | Bearer access token, tài khoản ACTIVE | Đổi tên của chính tài khoản; chỉ nhận `name` |
-| `PATCH /api/auth/me/avatar` | Bearer access token, tài khoản ACTIVE | Upload một file `avatar` JPEG/PNG/WebP bằng multipart/form-data |
+| `PATCH /api/auth/me` | Bearer access token, tài khoản ACTIVE | JSON đổi tên; multipart đổi tên, ảnh hoặc cả hai |
 
-Public user trong register/login/refresh/GET `/me`, PATCH `/me` và PATCH
-`/me/avatar` gồm đúng `id`, `email`, `name`, `avatar`, `role`. `avatar` luôn
+Public user trong register/login/refresh/GET `/me` và PATCH `/me`
+gồm đúng `id`, `email`, `name`, `avatar`, `role`. `avatar` luôn
 là URL ảnh riêng hoặc ảnh mặc định chung. Chỉ hai response quản trị nói trên thêm
 `status` và, với danh sách chờ, `createdAt`.
 
@@ -69,8 +68,8 @@ Giáo viên hoặc ADMIN ACTIVE dùng `PATCH /api/auth/me` với
 `{"name":"Nguyễn Minh Anh"}`. Backend lấy User ID từ access token đã xác thực,
 trim tên và nhận từ 1 đến 150 Unicode code points, tương đương
 `Array.from(name.trim()).length`.
-Body chỉ có `name`; field lạ hoặc tên rỗng/null/sai kiểu/quá dài trả `400`.
-Thành công trả `200`, message `Cập nhật tên thành công` và `data.user`.
+Với JSON, body chỉ có `name` bắt buộc; field lạ hoặc tên rỗng/null/sai kiểu/quá dài trả `400`.
+Thành công trả `200`, message `Cập nhật thông tin tài khoản thành công` và `data.user`.
 Thiếu/sai/hết hạn token hoặc tài khoản đã mất trả `401`; PENDING trả `403`.
 Endpoint này không dùng ID trong URL và không có nhánh `404` cho tài khoản.
 
@@ -82,15 +81,19 @@ Hướng dẫn đầy đủ, migration và phạm vi avatar ở
 
 ## Avatar của tài khoản
 
-Tài khoản ACTIVE dùng `PATCH /api/auth/me/avatar`: một file tên `avatar`,
+Tài khoản ACTIVE dùng cùng `PATCH /api/auth/me`: một file tên `avatar`,
 JPEG/PNG/WebP, tối đa 2 MiB và ảnh tối đa 20 megapixel. Backend xác nhận ảnh
 thật, xử lý thành WebP 256×256, upload Cloudinary rồi lưu URL cho chính
-tài khoản gọi. Body JSON chứa URL hoặc field/file bổ sung bị từ chối.
+tài khoản gọi. Multipart có thể thêm `name` dạng Text; gửi chỉ tên, chỉ ảnh
+hoặc cả hai, ít nhất một field. JSON vẫn chỉ nhận name; URL ảnh hoặc
+field/file bổ sung bị từ chối.
 
 Postman chọn Body → form-data → key `avatar` kiểu **File**. Frontend dùng
-FormData + Bearer token, để client tự tạo Content-Type/boundary. PATCH tên
-tiếp tục chỉ nhận `name`; không gửi avatar vào endpoint đó. Thành công trả
-`Cập nhật avatar thành công` cùng public User, không cấp token/cookie mới.
+FormData + Bearer token, để client tự tạo Content-Type/boundary. Khi gửi tên
+cùng ảnh, backend upload trước rồi ghi cả hai trong một cập nhật DB; lỗi
+file/Cloudinary không đổi tên hoặc ảnh. Chỉ tên không cần cấu hình Cloudinary.
+Thành công trả `Cập nhật thông tin tài khoản thành công` cùng public User,
+không cấp token/cookie mới. Endpoint avatar riêng đã được gộp vào PATCH me.
 Hướng dẫn cấu hình Cloudinary và mã lỗi ở
 [user-profile-api.md](user-profile-api.md).
 

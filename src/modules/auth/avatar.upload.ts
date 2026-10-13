@@ -7,7 +7,7 @@ export const AVATAR_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as co
 class UnsupportedAvatarType extends Error {}
 const receiveAvatar = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_AVATAR_BYTES + 1, files: 1, fields: 0, parts: 2, fieldNameSize: 100 },
+  limits: { fileSize: MAX_AVATAR_BYTES + 1, files: 1, fields: 1, parts: 2, fieldNameSize: 100 },
   fileFilter: (_req, file, callback) => {
     if (!(AVATAR_MIME_TYPES as readonly string[]).includes(file.mimetype)) {
       callback(new UnsupportedAvatarType());
@@ -17,9 +17,14 @@ const receiveAvatar = multer({
   },
 }).single('avatar');
 
-export const uploadAvatarMiddleware: RequestHandler = (req, res, next) => {
+export const parseProfileUploadMiddleware: RequestHandler = (req, res, next) => {
   if (!req.is('multipart/form-data')) {
-    res.status(415).json({ success: false, message: 'Upload avatar phải dùng multipart/form-data' });
+    // Giữ JSON đổi tên hiện có; request không có body để Zod trả lỗi như trước.
+    if (!req.headers['content-type'] || req.is('application/json')) {
+      next();
+      return;
+    }
+    res.status(415).json({ success: false, message: 'Cập nhật tài khoản phải dùng application/json hoặc multipart/form-data' });
     return;
   }
   receiveAvatar(req, res, error => {
@@ -31,22 +36,22 @@ export const uploadAvatarMiddleware: RequestHandler = (req, res, next) => {
       if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
         res.status(413).json({ success: false, message: 'Ảnh không được vượt quá 2 MiB' });
       } else if (error instanceof multer.MulterError) {
-        res.status(400).json({ success: false, message: 'Chỉ gửi một file trong field avatar' });
+        res.status(400).json({ success: false, message: 'Chỉ gửi field name và một file avatar' });
       } else {
-        res.status(400).json({ success: false, message: 'Dữ liệu upload avatar không hợp lệ' });
+        res.status(400).json({ success: false, message: 'Dữ liệu cập nhật tài khoản không hợp lệ' });
       }
       return;
     }
-    if (!req.file || req.file.size === 0) {
+    if (req.file && req.file.size === 0) {
       res.status(400).json({ success: false, message: 'Vui lòng gửi một file avatar' });
       return;
     }
-    if (req.file.size > MAX_AVATAR_BYTES) {
+    if (req.file && req.file.size > MAX_AVATAR_BYTES) {
       res.status(413).json({ success: false, message: 'Ảnh không được vượt quá 2 MiB' });
       return;
     }
-    if (Object.keys(req.body ?? {}).length) {
-      res.status(400).json({ success: false, message: 'Chỉ gửi một file trong field avatar' });
+    if (Object.keys(req.body ?? {}).some(key => key !== 'name')) {
+      res.status(400).json({ success: false, message: 'Chỉ gửi field name và một file avatar' });
       return;
     }
     next();

@@ -44,7 +44,7 @@ const defaultAvatarExample = 'http://localhost:5000/api/assets/default-avatar.sv
 const avatarResponseField = {
   type: 'string',
   format: 'uri',
-  description: 'URL ảnh riêng hiện tại hoặc URL ảnh mặc định chung khi User.avatar trong DB là null. Response luôn là URL tuyệt đối, không trả null. Ảnh riêng được cập nhật qua PATCH /auth/me/avatar.',
+  description: 'URL ảnh riêng hiện tại hoặc URL ảnh mặc định chung khi User.avatar trong DB là null. Response luôn là URL tuyệt đối, không trả null. Upload ảnh riêng bằng multipart/form-data qua PATCH /auth/me.',
   example: defaultAvatarExample,
 };
 const publicUserExample = { id: 101, email: 'teacher@example.com', name: 'teacher@example.com', avatar: defaultAvatarExample, role: 'TEACHER' };
@@ -298,7 +298,7 @@ export const authSchemas = {
     required: ['success', 'message', 'data'],
     properties: {
       success: { type: 'boolean', enum: [true] },
-      message: { type: 'string', enum: ['Cập nhật tên thành công'] },
+      message: { type: 'string', enum: ['Cập nhật thông tin tài khoản thành công'] },
       data: {
         type: 'object',
         additionalProperties: false,
@@ -307,34 +307,29 @@ export const authSchemas = {
       },
     },
   },
-  AuthUpdateAvatarRequest: {
+  AuthUpdateProfileMultipartRequest: {
     type: 'object',
     additionalProperties: false,
-    required: ['avatar'],
-    description: 'Multipart strict: một file bắt buộc tên avatar, không có text field hoặc file khác. Không nhận URL ảnh, name, ID tài khoản hoặc JSON. Client tự tạo Content-Type kèm boundary.',
+    minProperties: 1,
+    anyOf: [{ required: ['name'] }, { required: ['avatar'] }],
+    description: 'Multipart: chỉ nhận name dạng text và tối đa một file avatar, cả hai optional nhưng phải gửi ít nhất một. Không nhận avatar text/URL, name dạng file, ID tài khoản hoặc field khác. Field không gửi giữ nguyên; name chỉ có khoảng trắng hoặc file rỗng bị từ chối. Client tự tạo Content-Type/boundary.',
     properties: {
+      name: {
+        type: 'string',
+        minLength: 1,
+        pattern: '\\S',
+        'x-minTrimmedCodePoints': 1,
+        'x-maxTrimmedCodePoints': 150,
+        description: 'Text optional; nếu gửi phải trim còn 1–150 Unicode code point như JSON. Không gửi giữ tên đang lưu. Không nhận name dạng file/null/số.',
+        example: 'Nguyễn Văn An',
+      },
       avatar: {
         type: 'string',
         format: 'binary',
         'x-maxBytes': 2097152,
         'x-maxPixels': 20000000,
         'x-acceptedMimeTypes': ['image/jpeg', 'image/png', 'image/webp'],
-        description: 'Một file JPEG/PNG/WebP không rỗng, tối đa 2 MiB (2097152 byte), ảnh giải mã tối đa 20 megapixel. Backend kiểm nội dung ảnh khớp MIME, áp EXIF orientation, crop cover thành WebP tĩnh 256×256 chất lượng 80 và bỏ metadata. PNG/WebP động lấy frame đầu. Tên/đuôi file không thay cho validation ảnh.',
-      },
-    },
-  },
-  AuthUpdateAvatarResponse: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['success', 'message', 'data'],
-    properties: {
-      success: { type: 'boolean', enum: [true] },
-      message: { type: 'string', enum: ['Cập nhật avatar thành công'] },
-      data: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['user'],
-        properties: { user: schemaRef('AuthUser') },
+        description: 'File optional; không gửi giữ ảnh đang lưu. Nếu gửi: JPEG/PNG/WebP không rỗng, tối đa 2 MiB (2097152 byte), ảnh giải mã tối đa 20 megapixel. Backend kiểm nội dung khớp MIME, áp EXIF orientation, crop cover thành WebP tĩnh 256×256 chất lượng 80, bỏ metadata; PNG/WebP động lấy frame đầu.',
       },
     },
   },
@@ -588,13 +583,16 @@ export const authPaths = {
     patch: {
       tags: ['Auth'],
       operationId: 'authUpdateProfile',
-      summary: 'Cập nhật tên tài khoản đang đăng nhập',
+      summary: 'Cập nhật tên và avatar của tài khoản đang đăng nhập',
       description: [
-        'Yêu cầu access JWT hợp lệ và tài khoản ACTIVE; chỉ cập nhật chính tài khoản được middleware xác thực.',
-        'Không nhận ID tài khoản từ URL/body/query, không mở API sửa tên người khác. TEACHER và ADMIN cập nhật tên của mình theo cùng luồng.',
-        'Body strict chỉ nhận name bắt buộc; trim hai đầu rồi kiểm từ 1 đến 150 Unicode code point. Không gửi name ở đăng ký: tên ban đầu bằng email được lưu.',
-        'Không đổi email, role, status, mật khẩu, avatar, ownership, access token hoặc refresh cookie; đổi ảnh dùng riêng PATCH /auth/me/avatar. Field lạ trả 400.',
-        'Thành công trả user hiện tại có id/email/name/avatar/role. Tài khoản không còn tồn tại trả 401; PENDING bị middleware chặn 403. Không dùng query.',
+        'Yêu cầu access JWT hợp lệ và tài khoản ACTIVE; chỉ cập nhật tài khoản được middleware xác thực. TEACHER và ADMIN cùng dùng API này, không lấy ID từ client.',
+        'JSON application/json chỉ nhận name bắt buộc, trim còn 1–150 Unicode code point; avatar/URL hoặc field lạ trong JSON trả 400.',
+        'Multipart/form-data nhận name dạng text và tối đa một file avatar, cả hai optional nhưng phải có ít nhất một. Không gửi field nào thì giữ nguyên field đó; name không được rỗng và file không được rỗng.',
+        'Ảnh JPEG/PNG/WebP tối đa 2 MiB, ảnh giải mã tối đa 20 megapixel; kiểm nội dung khớp MIME, EXIF orientation, crop cover thành WebP tĩnh 256×256 chất lượng 80 và bỏ metadata. PNG/WebP động lấy frame đầu.',
+        'Chỉ sửa tên không cần Cloudinary. Khi có ảnh, upload trước rồi ghi các field đã gửi trong một lần cập nhật DB; lỗi validation/Cloudinary không lưu tên hoặc ảnh mới.',
+        'Ghi ảnh kiểm snapshot avatar và tài khoản ACTIVE; xung đột ảnh trả 409 để tải lại. Cập nhật tên riêng đồng thời không gây xung đột với upload chỉ ảnh; request có cả tên/ảnh ghi cả hai field đã gửi.',
+        'Không đổi email, role, status, mật khẩu, ownership, access token hoặc refresh cookie. Response có id/email/name/avatar/role; avatar null trong DB dùng URL ảnh chung.',
+        'Tài khoản mất trả 401, PENDING trả 403. Chỉ request có ảnh mới cần cấu hình dịch vụ (503) hoặc có thể lỗi upload (502). Lỗi lưu/đối soát ảnh 500: đọc lại GET /auth/me để biết thông tin đang lưu. Query không được dùng.',
       ].join(' '),
       security: [{ bearerAuth: [] }],
       requestBody: {
@@ -604,84 +602,51 @@ export const authPaths = {
             schema: schemaRef('AuthUpdateProfileRequest'),
             example: { name: 'Nguyễn Văn An' },
           },
+          'multipart/form-data': {
+            schema: schemaRef('AuthUpdateProfileMultipartRequest'),
+            encoding: { avatar: { contentType: 'image/jpeg, image/png, image/webp' }, name: { contentType: 'text/plain' } },
+          },
         },
       },
       responses: {
         ...parserResponses,
         '200': {
-          description: 'Tên đã được trim và lưu; không cấp token hoặc đặt refresh cookie.',
+          description: 'Các field đã gửi được lưu; field bỏ qua giữ nguyên, không cấp token/cookie mới.',
           content: {
             'application/json': {
               schema: schemaRef('AuthUpdateProfileResponse'),
-              example: { success: true, message: 'Cập nhật tên thành công', data: { user: { ...publicUserExample, name: 'Nguyễn Văn An' } } },
+              examples: {
+                nameOnly: { value: { success: true, message: 'Cập nhật thông tin tài khoản thành công', data: { user: { ...publicUserExample, name: 'Nguyễn Văn An' } } } },
+                nameAndAvatar: {
+                  value: {
+                    success: true,
+                    message: 'Cập nhật thông tin tài khoản thành công',
+                    data: { user: { ...publicUserExample, name: 'Nguyễn Văn An', avatar: 'https://res.cloudinary.com/example/image/upload/avatar-example.webp' } },
+                  },
+                },
+              },
             },
           },
         },
         '400': {
-          description: 'Body thiếu/sai/rỗng/field lạ hoặc tên không hợp lệ có errors; JSON sai cú pháp/null bị parser từ chối không có errors.',
+          description: 'Body/name không hợp lệ hoặc thiếu cả tên/ảnh có errors. Multipart/file/JSON parser sai không có errors.',
           content: {
             'application/json': {
               schema: { oneOf: [schemaRef('AuthUpdateProfileValidationError'), schemaRef('AuthError')] },
               examples: {
-                unknownField: { value: { success: false, message: 'Thông tin tài khoản không hợp lệ', errors: [{ field: 'body', message: 'Unrecognized key: "avatar"' }] } },
+                unknownJsonField: { value: { success: false, message: 'Thông tin tài khoản không hợp lệ', errors: [{ field: 'body', message: 'Unrecognized key: "avatar"' }] } },
                 invalidName: { value: { success: false, message: 'Thông tin tài khoản không hợp lệ', errors: [{ field: 'name', message: 'Tên không được để trống' }] } },
+                emptyMultipart: { value: { success: false, message: 'Thông tin tài khoản không hợp lệ', errors: [{ field: 'body', message: 'Cần gửi name hoặc một file avatar' }] } },
+                emptyFile: errorExample('Vui lòng gửi một file avatar'),
+                malformedMultipart: errorExample('Dữ liệu cập nhật tài khoản không hợp lệ'),
+                extraField: errorExample('Chỉ gửi field name và một file avatar'),
+                invalidImage: errorExample('File ảnh không hợp lệ'),
+                mimeMismatch: errorExample('Nội dung file không khớp định dạng ảnh'),
                 malformedJson: errorExample('Body JSON không hợp lệ'),
               },
             },
           },
         },
-        '401': bearerUnauthorized,
-        '403': accountPending,
-      },
-    },
-  },
-  '/auth/me/avatar': {
-    patch: {
-      tags: ['Auth'],
-      operationId: 'authUpdateAvatar',
-      summary: 'Upload avatar của tài khoản đang đăng nhập',
-      description: [
-        'Yêu cầu Bearer access token hợp lệ và tài khoản ACTIVE trước khi đọc multipart/upload. TEACHER và ADMIN đều chỉ đổi ảnh của chính mình; ID lấy từ middleware xác thực, không từ client.',
-        'Gửi một file tên avatar bằng multipart/form-data; không có text field/file khác, không gửi URL ảnh qua JSON. Client tự thêm Content-Type/boundary.',
-        'Chấp nhận JPEG/PNG/WebP, file tối đa 2 MiB và ảnh giải mã tối đa 20 megapixel. Sau kiểm cấu hình dịch vụ, kiểm ảnh thật khớp MIME rồi xử lý thành WebP tĩnh 256×256 chất lượng 80 (EXIF orientation, crop cover, bỏ metadata); PNG/WebP động lấy frame đầu.',
-        'Thành công lưu URL riêng, trả public User 5 field. User chưa có ảnh riêng dùng URL mặc định chung khi đọc; không chép URL mặc định vào DB.',
-        'Ghi có kiểm ownership/trạng thái và snapshot avatar đã đọc; hai upload đổi cùng snapshot có thể xung đột 409. Tải lại hồ sơ trước khi gửi lại.',
-        'Chưa cấu hình dịch vụ trả 503; Cloudinary upload thất bại trả 502. Lỗi lưu/đối soát DB trả 500: đọc lại GET /auth/me để xác nhận ảnh hiện tại.',
-        'Không thay name/email/role, token hoặc refresh cookie. Query không được dùng; muốn đổi tên dùng PATCH /auth/me với JSON name.',
-      ].join(' '),
-      security: [{ bearerAuth: [] }],
-      requestBody: {
-        required: true,
-        content: {
-          'multipart/form-data': {
-            schema: schemaRef('AuthUpdateAvatarRequest'),
-            encoding: { avatar: { contentType: 'image/jpeg, image/png, image/webp' } },
-          },
-        },
-      },
-      responses: {
-        ...parserResponses,
-        '200': {
-          description: 'Avatar mới đã được lưu; không cấp token hoặc đặt cookie.',
-          content: {
-            'application/json': {
-              schema: schemaRef('AuthUpdateAvatarResponse'),
-              example: {
-                success: true,
-                message: 'Cập nhật avatar thành công',
-                data: { user: { ...publicUserExample, avatar: 'https://res.cloudinary.com/example/image/upload/avatar-example.webp' } },
-              },
-            },
-          },
-        },
-        '400': errorResponse('File thiếu/rỗng, multipart sai/field thêm, ảnh không giải mã được/quá 20 megapixel hoặc nội dung không khớp MIME; JSON parser sai cú pháp cũng trả 400.', {
-          missingFile: errorExample('Vui lòng gửi một file avatar'),
-          malformedMultipart: errorExample('Dữ liệu upload avatar không hợp lệ'),
-          extraField: errorExample('Chỉ gửi một file trong field avatar'),
-          invalidImage: errorExample('File ảnh không hợp lệ'),
-          mimeMismatch: errorExample('Nội dung file không khớp định dạng ảnh'),
-          malformedJson: errorExample('Body JSON không hợp lệ'),
-        }),
         '401': bearerUnauthorized,
         '403': accountPending,
         '409': errorResponse('Avatar thay đổi trong lúc upload/ghi; tải lại hồ sơ rồi thử lại.', {
@@ -691,19 +656,19 @@ export const authPaths = {
           tooLargeAvatar: errorExample('Ảnh không được vượt quá 2 MiB'),
           tooLargeJson: errorExample('Body JSON vượt quá giới hạn cho phép'),
         }),
-        '415': errorResponse('Không dùng multipart hoặc MIME không được nhận; charset/encoding JSON không được hỗ trợ cũng dùng lỗi parser chung.', {
-          wrongContentType: errorExample('Upload avatar phải dùng multipart/form-data'),
+        '415': errorResponse('Chỉ nhận JSON hoặc multipart/form-data; MIME ảnh không hỗ trợ hoặc lỗi charset/encoding parser.', {
+          wrongContentType: errorExample('Cập nhật tài khoản phải dùng application/json hoặc multipart/form-data'),
           unsupportedImage: errorExample('Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP'),
           unsupportedEncoding: errorExample('Charset hoặc encoding của body không được hỗ trợ'),
         }),
-        '500': errorResponse('Không thể lưu/đối soát avatar hoặc lỗi máy chủ; đọc lại GET /auth/me để biết ảnh đang lưu.', {
-          saveError: errorExample('Không thể lưu avatar'),
+        '500': errorResponse('Không thể lưu/đối soát ảnh hoặc lỗi máy chủ; đọc GET /auth/me để biết thông tin đang lưu.', {
+          saveError: errorExample('Không thể lưu thông tin tài khoản'),
           serverError: errorExample('Lỗi máy chủ'),
         }),
-        '502': errorResponse('Cloudinary upload thất bại; không trả raw provider error/credentials.', {
+        '502': errorResponse('Cloudinary upload thất bại; không lưu tên/ảnh mới và không trả raw provider error/credentials.', {
           uploadFailed: errorExample('Không thể upload avatar, vui lòng thử lại'),
         }),
-        '503': errorResponse('Backend chưa được cấu hình đủ dịch vụ Cloudinary cho avatar.', {
+        '503': errorResponse('Request có ảnh nhưng backend chưa được cấu hình đủ Cloudinary; không lưu tên/ảnh mới. Request chỉ tên vẫn hoạt động.', {
           notConfigured: errorExample('Dịch vụ avatar chưa được cấu hình'),
         }),
       },

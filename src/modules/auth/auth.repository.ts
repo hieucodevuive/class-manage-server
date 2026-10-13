@@ -77,21 +77,6 @@ export function findUserStatusById(id: number) {
   });
 }
 
-export async function updateUserName(id: number, name: string) {
-  try {
-    return await prisma.user.update({
-      where: { id, status: 'ACTIVE' },
-      data: { name },
-      select: { id: true, email: true, name: true, avatar: true, role: true },
-    });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-      return null;
-    }
-    throw error;
-  }
-}
-
 export function saveRefreshToken(
   userId: number,
   tokenHash: string,
@@ -151,15 +136,18 @@ export function deleteRefreshTokenByHash(tokenHash: string) {
   });
 }
 
-export function findUserAvatarState(id: number) {
-  return prisma.user.findUnique({ where: { id }, select: { avatar: true, status: true } });
+export function findUserProfileState(id: number) {
+  return prisma.user.findUnique({ where: { id }, select: { name: true, avatar: true, status: true } });
 }
 
-export async function updateUserAvatar(id: number, previousAvatar: string | null, avatar: string) {
+export async function updateUserProfile(id: number, data: { name?: string; avatar?: string }, previousAvatar: string | null) {
   try {
     return await prisma.user.update({
-      where: { id, status: 'ACTIVE', avatar: previousAvatar },
-      data: { avatar },
+      where: { id, status: 'ACTIVE', ...(data.avatar === undefined ? {} : { avatar: previousAvatar }) },
+      data: {
+        ...(data.name === undefined ? {} : { name: data.name }),
+        ...(data.avatar === undefined ? {} : { avatar: data.avatar }),
+      },
       select: { id: true, email: true, name: true, avatar: true, role: true },
     });
   } catch (error) {

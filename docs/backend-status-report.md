@@ -1,6 +1,6 @@
 # Báo cáo backend Class Management
 
-Ngày tổng kiểm tra: **2026-10-10**; cập nhật tài khoản name/avatar: **2026-10-12**.
+Ngày tổng kiểm tra: **2026-10-10**; cập nhật tài khoản name/avatar: **2026-10-13**.
 Báo cáo đối chiếu code hiện tại và kết quả chạy
 test trong lượt tổng kiểm tra sau khi người dùng chọn giữ mọi Payment và lượt
 sửa lỗi parser/CORS, bổ sung test logout/refresh và test luồng nghiệp vụ tiếp theo.
@@ -14,6 +14,7 @@ Lượt bổ sung User.name và PATCH hồ sơ được ghi ở mục 16; kết 
 bước này được cập nhật riêng sau khi chạy.
 Lượt chuẩn bị schema avatar User được ghi riêng ở mục 17; contract API giữ nguyên.
 Lượt upload Cloudinary, ảnh mặc định và contract avatar được ghi ở mục 18.
+Lượt gộp tên/avatar vào một API hồ sơ được ghi ở mục 19, thay contract hai API ở mục 18.
 
 ## 1. Kết quả tổng kiểm tra trước sửa middleware
 
@@ -119,12 +120,12 @@ Chi tiết thiết kế ở [system-design.md](system-design.md),
 
 ## 4. API hiện có
 
-Có **31 cặp phương thức/đường dẫn** được đăng ký trong router hiện tại,
+Có **30 cặp phương thức/đường dẫn** được đăng ký trong router hiện tại,
 không tính trang tài liệu, OpenAPI JSON, assets Swagger và ảnh mặc định:
-9 Auth + 5 Class + 5 Student + 3 Enrollment + 5 Schedule + 4 Payment.
-OpenAPI có 18 path; GET/PATCH hồ sơ dùng chung `/auth/me`.
+8 Auth + 5 Class + 5 Student + 3 Enrollment + 5 Schedule + 4 Payment.
+OpenAPI có 17 path; GET/PATCH hồ sơ dùng chung `/auth/me`.
 
-### Authentication — 9 API
+### Authentication — 8 API
 
 | Phương thức | Đường dẫn | Logic/quyền |
 | --- | --- | --- |
@@ -133,8 +134,7 @@ OpenAPI có 18 path; GET/PATCH hồ sơ dùng chung `/auth/me`.
 | POST | `/api/auth/refresh` | Dùng refresh cookie hợp lệ và tài khoản ACTIVE; đổi refresh token |
 | POST | `/api/auth/logout` | Xóa refresh token tương ứng nếu có, clear cookie |
 | GET | `/api/auth/me` | Bearer token; trả tài khoản đã xác thực |
-| PATCH | `/api/auth/me` | Bearer token, ACTIVE; chỉ đổi name của chính User từ auth, trim 1–150 Unicode code points |
-| PATCH | `/api/auth/me/avatar` | Bearer token, ACTIVE; upload một ảnh của chính User, multipart field avatar, Cloudinary |
+| PATCH | `/api/auth/me` | Bearer token, ACTIVE; cập nhật name, avatar hoặc cả hai của chính User; JSON đổi tên hoặc multipart name/file avatar |
 | GET | `/api/auth/registrations/pending` | Chỉ ADMIN ACTIVE xem giáo viên chờ duyệt |
 | PATCH | `/api/auth/registrations/:id/approve` | Chỉ ADMIN ACTIVE chuyển TEACHER/PENDING sang ACTIVE; duyệt trùng 409 |
 
@@ -142,10 +142,10 @@ OpenAPI có 18 path; GET/PATCH hồ sơ dùng chung `/auth/me`.
 hash token. Refresh cookie dùng httpOnly, path `/api/auth`, sameSite lax,
 secure trong production. Logout thu hồi refresh token tương ứng; access token
 đã cấp tiếp tục theo hạn JWT và điều kiện middleware hiện có.
-Public User của register/login/refresh/GET-PATCH `/me` và PATCH avatar có
+Public User của register/login/refresh/GET-PATCH `/me` có
 id/email/name/avatar/role. Avatar luôn là URL ảnh riêng hoặc ảnh mặc định;
 User.avatar trong DB vẫn nullable, không lưu URL mặc định cho từng User.
-Pending list thêm status/createdAt, approve thêm status. PATCH tên không
+Pending list thêm status/createdAt, approve thêm status. PATCH hồ sơ không
 cấp token hoặc đổi refresh/logout; sai body 400, User mất 401, PENDING 403.
 
 ADMIN được xem/duyệt yêu cầu tài khoản; các API dữ liệu lớp/học sinh/học phí
@@ -860,7 +860,67 @@ thể để lại ảnh không được dùng; không có transaction phân tán
 ảnh trong bước này. Chưa mở API xóa/reset avatar. Sau khi đổi credential,
 cần khởi động lại dev server để nạp `.env` mới; smoke chạy bằng process mới.
 
-## 19. Kết luận và bước sau
+## 19. Gộp tên và avatar vào một API hồ sơ (2026-10-13)
+
+Người dùng yêu cầu một API cập nhật thông tin tài khoản. Contract ở mục 18
+đã được thay bằng duy nhất PATCH `/api/auth/me`; endpoint PATCH
+`/api/auth/me/avatar` được bỏ và trả 404. OpenAPI còn 30 operation/17 path,
+gồm 8 API Auth. Giữ response public User năm field và ảnh mặc định đã có.
+
+### Contract và logic
+
+- JSON giữ request `{ name }` strict của API tên trước đây; name bắt buộc,
+  trim và kiểm 1–150 Unicode code points. JSON không nhận URL/avatar hoặc
+  field khác.
+- Multipart nhận name kiểu Text và avatar kiểu File, mỗi field optional
+  nhưng phải có ít nhất một; chỉ gửi tên, chỉ ảnh hoặc cả hai đều được.
+  Field không gửi giữ nguyên. File rỗng, text avatar, nhiều file/field lạ
+  bị từ chối; name rỗng/sai/không hợp lệ vẫn bị từ chối khi có ảnh.
+- Chỉ request có file mới cần Cloudinary. Giữ JPEG/PNG/WebP, 2 MiB/20 MP,
+  Sharp WebP 256×256 và namespace ảnh thuộc User như trước.
+- Nếu có file, upload thành công trước rồi một Prisma UPDATE lưu các field
+  được gửi. Validation/upload/config lỗi không lưu tên trước hoặc sửa avatar.
+  Truy vấn có User ID từ auth và ACTIVE; khi đổi ảnh có thêm snapshot avatar
+  cũ. Xung đột 409 không ghi cả hai field và dọn candidate.
+- Khi chỉ đổi tên, không khóa snapshot avatar; không ghi đè ảnh đang được
+  request khác đổi. Khi không gửi tên, không ghi lại tên snapshot.
+- DB lỗi chưa rõ commit: đối soát URL mới duy nhất làm marker chứng minh
+  UPDATE cả hai field đã commit; tên có thể đã được request khác đổi tiếp.
+  Nếu không xác nhận được thì trả 500 và giữ ảnh mới; đọc GET me để kiểm tra.
+- Response 200 dùng message `Cập nhật thông tin tài khoản thành công`,
+  data.user năm field. Lỗi lưu dùng `Không thể lưu thông tin tài khoản`.
+  Giữ auth/JWT/refresh/logout và không thay schema/migration/credential.
+
+File chính: Auth route/controller/schema/service/repository,
+`avatar.upload.ts`, `profile.service.ts` (thay `avatar.service.ts`), Auth
+OpenAPI, tests profile/avatar/docs và các tài liệu hồ sơ. Hướng dẫn gửi
+request ở `docs/user-profile-api.md`. Frontend cần gen lại type và dùng
+PATCH `/auth/me` cho cả tên và ảnh; không sửa FE trong lượt này.
+
+### Kiểm tra
+
+Smoke qua API mới và Cloudinary thật đã đạt: multipart gửi name và avatar
+cùng request, DB/response/GET me có cả hai giá trị mới, CDN WebP 256×256;
+JSON đổi tên giữ ảnh, endpoint cũ trả 404, tài khoản B không bị sửa.
+Ảnh Cloudinary/tài khoản fixture và file probe đã được dọn. Kết quả bộ test
+hồi quy của lượt gộp đã chạy:
+
+| Kiểm tra | Kết quả |
+| --- | --- |
+| TypeScript src | Đạt |
+| Typecheck riêng tests profile/avatar/docs | Đạt |
+| `npm run test:auth` | 6/6: phiên Auth/đổi tên/public User giữ nguyên, response PATCH dùng message chung |
+| `npm run test:avatar` | 1/1: JSON/multipart/at-least-one, name-only không cần Cloud, cả hai field trong một UPDATE, validation/provider/CAS lỗi giữ dữ liệu và reconcile commit |
+| `npm run test:docs` | 1/1: 30 operation/17 path, JSON + multipart cùng PATCH, public SVG, auth/CORS và route cũ 404 |
+| Smoke API gộp + Cloudinary thật | Đạt theo các tình huống mô tả ở trên, đã dọn ảnh/User fixture |
+
+Tổng hồi quy phù hợp **8/8 đạt**, exit code 0, không fail/skipped/cancelled.
+Smoke Cloudinary thật ghi riêng, không cộng vào số test Node. Test có DB
+chạy lần lượt, chỉ dọn fixture của mình. Chưa chạy lại các bộ module/E2E
+hoặc mở Swagger trong trình duyệt; giới hạn best-effort cleanup ở mục 18
+vẫn giữ nguyên. Không migrate/reset/seed/commit/push hoặc sửa frontend.
+
+## 20. Kết luận và bước sau
 
 Các API cơ bản của Auth, Class, Student, Enrollment, Schedule và Payment đã
 có theo phạm vi trên. Lượt tổng kiểm tra đạt TypeScript, Prisma và 24/24 test
@@ -891,7 +951,7 @@ các lượt tiếp theo hoàn tất Swagger/OpenAPI Auth, Class, Student, Enrol
 ClassSchedule, Payment; bước mới bổ sung User.name và API đổi tên tài khoản.
 Tiến độ được ghi ở system-design.md.
 Schema avatar đã hoàn tất theo mục 17 (Auth/Docs 7/7 và probe Prisma đạt).
-Upload Cloudinary/ảnh mặc định/contract avatar đã hoàn tất theo mục 18,
-đạt 10/10 test phù hợp và smoke Cloudinary thật; inventory hiện có 31 API.
-Frontend cần sinh lại type từ OpenAPI và gửi FormData khi đổi avatar.
-Bước tiếp theo do người dùng chọn; dừng sau API upload hiện tại.
+Upload Cloudinary/ảnh mặc định đã hoàn tất theo mục 18 (10/10 test phù hợp
+và smoke thật). Mục 19 gộp tên/ảnh vào PATCH hồ sơ; inventory hiện có 30 API.
+Frontend cần sinh lại type từ OpenAPI và gửi FormData tới PATCH `/auth/me`
+khi đổi avatar. Bước tiếp theo do người dùng chọn; dừng sau API hồ sơ.

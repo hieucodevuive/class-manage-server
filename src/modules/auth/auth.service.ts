@@ -2,7 +2,8 @@ import bcrypt from 'bcryptjs';
 import { Prisma } from '../../generated/prisma/client';
 import type { RegisterInput, UpdateProfileInput } from './auth.schema';
 import { serializeUser } from './auth.response';
-import { activatePendingTeacher, deleteRefreshTokenByHash, findPendingRegistrations, findRefreshTokenByHash, findRegistrationState, findUserByEmail, findUserByEmailIgnoreCase, findUserById, findUserStatusById, insertPendingTeacher, rotateRefreshToken, saveRefreshToken, updateUserName } from './auth.repository';
+import { activatePendingTeacher, deleteRefreshTokenByHash, findPendingRegistrations, findRefreshTokenByHash, findRegistrationState, findUserByEmail, findUserByEmailIgnoreCase, findUserById, findUserStatusById, insertPendingTeacher, rotateRefreshToken, saveRefreshToken } from './auth.repository';
+import { updateCurrentUserProfile } from './profile.service';
 import {
   createRefreshToken,
   hashRefreshToken,
@@ -70,9 +71,8 @@ export async function getCurrentUser(userId: number) {
   return user ? serializeUser(user) : null;
 }
 
-export async function updateCurrentUser(userId: number, data: UpdateProfileInput) {
-  const user = await updateUserName(userId, data.name);
-  return user ? serializeUser(user) : null;
+export function updateCurrentUser(userId: number, data: UpdateProfileInput, file?: { buffer: Buffer; mimetype: string }) {
+  return updateCurrentUserProfile(userId, data, file);
 }
 
 export async function getAccountStatus(userId: number) {

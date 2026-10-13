@@ -590,3 +590,32 @@ Business routes tiếp tục dùng middleware auth/role hiện có. Vai trò `AD
   được sửa trong `.env`; không in hoặc lưu credential thật vào tài liệu/Git.
 - Không reset/seed/commit/push hoặc chạy lại tất cả module. Kết quả và giới
   hạn ở mục 18 `docs/backend-status-report.md`; dừng sau API này.
+
+## 25. Một API cập nhật hồ sơ tên/avatar (2026-10-13)
+
+- Theo yêu cầu gộp của người dùng, chỉ có PATCH `/api/auth/me` cập nhật hồ sơ;
+  bỏ PATCH `/api/auth/me/avatar`. Mục này thay contract hai API ở mục 24,
+  giữ schema name/avatar và luồng authentication đã có.
+- JSON strict nhận name bắt buộc như API tên cũ; multipart nhận name Text
+  và avatar File tùy chọn, phải có ít nhất một. Không gửi field nào thì giữ
+  field đó; không nhận URL ảnh, ID tài khoản hoặc field quản trị từ client.
+  Tên giữ validation trim 1–150 Unicode code points; ảnh giữ JPEG/PNG/WebP,
+  2 MiB/20 MP và WebP 256×256. Chỉ đổi tên không cần Cloudinary.
+- Request có ảnh phải upload thành công trước; một câu UPDATE lưu name và
+  avatar được gửi cùng nhau. Lỗi validation/config/upload không ghi tên trước.
+  Truy vấn theo ID auth + ACTIVE và snapshot avatar nếu đổi ảnh, candidate
+  thua xung đột được dọn. Không gửi name thì không ghi đè tên đổi đồng thời;
+  chỉ đổi name thì không khóa/ghi lại avatar snapshot.
+- Dọn ảnh và xử lý DB chưa rõ commit giữ nguyên nguyên tắc ở mục 24. URL mới
+  duy nhất xác nhận UPDATE cả hai field đã commit, kể cả tên bị đổi tiếp
+  bởi request khác. Không xác nhận được thì trả 500, giữ ảnh và đọc GET me.
+- Response vẫn public User năm field; message thành công chung là
+  `Cập nhật thông tin tài khoản thành công`. OpenAPI có 30 operation/17 path,
+  Auth 8 API. FE cần gen lại type, gửi FormData tới PATCH `/auth/me` khi có ảnh.
+- Smoke Cloudinary thật qua API gộp đạt: cùng request đổi name/avatar,
+  WebP CDN 256×256, JSON đổi tên giữ ảnh, endpoint cũ 404, B giữ nguyên.
+  Dữ liệu thử đã dọn; kết quả bộ test được ghi ở mục 19 báo cáo backend.
+  Không đổi database/migration/credential, không sửa FE hoặc commit/push.
+- TypeScript src và typecheck tests profile/avatar/docs đạt. Auth 6/6,
+  Avatar 1/1, Docs 1/1: tổng 8/8 hồi quy phù hợp, không fail/skipped/cancelled.
+  Không chạy lại các bộ module/E2E hoặc kiểm trình duyệt ở lượt gộp này.

@@ -105,7 +105,7 @@ test('Đổi name chỉ sửa tài khoản đang xác thực, strict body và c�
       const result = await request(`/me${query}`, 'PATCH', token, { name: inputName });
       assert.equal(result.status, 200);
       assertKeys(result.body, ['success', 'message', 'data'], 'PATCH /me phải trả đúng envelope');
-      assert.ok(result.body.success === true && result.body.message === 'Cập nhật tên thành công', 'Đổi name phải trả thông báo thành công');
+      assert.ok(result.body.success === true && result.body.message === 'Cập nhật thông tin tài khoản thành công', 'PATCH hồ sơ phải trả thông báo thành công');
       assertKeys(result.body.data, ['user'], 'PATCH /me phải trả đúng data');
       assertPublicUser(result.body.data.user, user, expectedName);
       assert.ok(result.cookie === null, 'Đổi name không được tạo hoặc thay refresh cookie');
@@ -126,6 +126,12 @@ test('Đổi name chỉ sửa tài khoản đang xác thực, strict body và c�
     await assertDenied(undefined, 401, 'Thiếu access token');
     await assertDenied('invalid-access-token', 401, 'Access token không hợp lệ hoặc đã hết hạn');
     await assertDenied(pendingToken, 403, 'Tài khoản đang chờ duyệt');
+    const removedAvatarRoute = await request('/me/avatar', 'PATCH', tokenA, { name: 'Không được lưu' });
+    assert.equal(removedAvatarRoute.status, 404);
+    assertKeys(removedAvatarRoute.body, ['success', 'message'], 'Route avatar cũ phải trả envelope 404');
+    assert.ok(removedAvatarRoute.body.success === false && removedAvatarRoute.body.message === 'Không tìm thấy API',
+      'Chỉ dùng PATCH /me để cập nhật hồ sơ; route /me/avatar đã bỏ');
+    assert.ok(removedAvatarRoute.cookie === null, 'Route đã bỏ không được cấp cookie');
 
     const invalidBodies: Array<{ label: string; body?: unknown; field: string; message?: string }> = [
       { label: 'không gửi body', field: 'body' },

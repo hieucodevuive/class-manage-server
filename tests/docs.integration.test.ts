@@ -31,7 +31,7 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
     assert.equal(spec.openapi, '3.0.4');
     assert.deepEqual(spec.servers.map((server: { url: string }) => server.url), ['/api']);
     assert.deepEqual(Object.keys(spec.paths).sort(), [
-      '/auth/login', '/auth/logout', '/auth/me', '/auth/me/avatar', '/auth/refresh', '/auth/register',
+      '/auth/login', '/auth/logout', '/auth/me', '/auth/refresh', '/auth/register',
       '/auth/registrations/pending', '/auth/registrations/{id}/approve',
       '/classes', '/classes/{classId}/schedules', '/classes/{classId}/schedules/{scheduleId}',
       '/classes/{classId}/students', '/classes/{classId}/students/{studentId}', '/classes/{id}',
@@ -42,8 +42,8 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
     const operations = Object.values(spec.paths).flatMap(path =>
       Object.entries(path as Record<string, { operationId: string }>).filter(([method]) => methods.includes(method))
         .map(([, operation]) => operation));
-    assert.equal(operations.length, 31);
-    assert.equal(new Set(operations.map(operation => operation.operationId)).size, 31);
+    assert.equal(operations.length, 30);
+    assert.equal(new Set(operations.map(operation => operation.operationId)).size, 30);
     const serialized = JSON.stringify(spec);
     assert.ok(!serialized.includes(env.JWT_SECRET), 'OpenAPI không được chứa JWT secret');
     assert.ok(!serialized.includes(env.DATABASE_URL), 'OpenAPI không được chứa database URL');
@@ -82,12 +82,12 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
     // Public User luôn có name và URL avatar riêng/mặc định, vẫn loại dữ liệu tài khoản nhạy cảm.
     const authOperationCount = Object.entries(spec.paths).filter(([path]) => path.startsWith('/auth/'))
       .reduce((count, [, path]) => count + Object.keys(path as object).filter(method => methods.includes(method)).length, 0);
-    assert.equal(authOperationCount, 9);
+    assert.equal(authOperationCount, 8);
     assert.deepEqual(Object.keys(spec.paths['/auth/me']).filter(key => methods.includes(key)).sort(), ['get', 'patch']);
     const authUserKeys = ['avatar', 'email', 'id', 'name', 'role'];
     for (const [path, method, status] of [
       ['/auth/register', 'post', '201'], ['/auth/login', 'post', '200'], ['/auth/refresh', 'post', '200'],
-      ['/auth/me', 'get', '200'], ['/auth/me', 'patch', '200'], ['/auth/me/avatar', 'patch', '200'],
+      ['/auth/me', 'get', '200'], ['/auth/me', 'patch', '200'],
     ] as const) {
       const fields = responseProperties(path, method, status);
       const userSchema = resolveSchema(propertiesOf(fields.data!).user!);
@@ -99,10 +99,14 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
       assert.equal(resolveSchema(userFields.avatar!).type, 'string');
       assert.equal(resolveSchema(userFields.avatar!).format, 'uri');
       assert.ok(resolveSchema(userFields.avatar!).nullable !== true, 'DB avatar null phải serialize thành URL ảnh chung');
-      const example = spec.paths[path][method].responses[status].content['application/json'].example;
-      assert.deepEqual(Object.keys(example.data.user).sort(), authUserKeys);
-      assert.equal(typeof example.data.user.name, 'string');
-      assert.ok(typeof example.data.user.avatar === 'string' && /^https?:\/\//.test(example.data.user.avatar));
+      const media = spec.paths[path][method].responses[status].content['application/json'];
+      const examples = media.example ? [media.example] : Object.values(media.examples).map((item: any) => item.value);
+      assert.ok(examples.length > 0, 'Response public User phải có ví dụ');
+      for (const example of examples) {
+        assert.deepEqual(Object.keys(example.data.user).sort(), authUserKeys);
+        assert.equal(typeof example.data.user.name, 'string');
+        assert.ok(typeof example.data.user.avatar === 'string' && /^https?:\/\//.test(example.data.user.avatar));
+      }
     }
     for (const method of ['get', 'patch']) {
       const operation = spec.paths['/auth/me'][method];
@@ -148,26 +152,32 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
     assert.ok(!new RegExp(profileName.pattern).test('   '));
     const profileResponse = responseProperties('/auth/me', 'patch');
     assert.deepEqual(Object.keys(profileResponse).sort(), ['data', 'message', 'success']);
-    assert.deepEqual(resolveSchema(profileResponse.message!).enum, ['Cập nhật tên thành công']);
+    assert.deepEqual(resolveSchema(profileResponse.message!).enum, ['Cập nhật thông tin tài khoản thành công']);
     const profileErrors = profilePatch.responses['400'].content['application/json'].schema.oneOf.map(resolveSchema) as Schema[];
     const profileValidation = profileErrors.find(schema => schema.properties?.errors);
     assert.ok(profileValidation, 'PATCH mô tả lỗi validation có field/message');
     assert.deepEqual(resolveSchema(propertiesOf(profileValidation).message!).enum, ['Thông tin tài khoản không hợp lệ']);
     assert.deepEqual(Object.keys(propertiesOf(resolveSchema(propertiesOf(profileValidation).errors!).items!)).sort(), ['field', 'message']);
 
-    const avatarPath = '/auth/me/avatar';
-    assert.deepEqual(Object.keys(spec.paths[avatarPath]).filter(key => methods.includes(key)), ['patch']);
-    const avatarPatch = spec.paths[avatarPath].patch;
+    assert.equal(spec.paths['/auth/me/avatar'], undefined, 'Tên và ảnh dùng cùng PATCH /auth/me');
+    const avatarPatch = profilePatch;
     assert.deepEqual(avatarPatch.security, [{ bearerAuth: [] }]);
     assert.ok(['200', '400', '401', '403', '409', '413', '415', '502', '503'].every(status => avatarPatch.responses[status]));
     assert.equal(avatarPatch.responses['404'], undefined, 'Tài khoản mất khi upload avatar dùng 401');
     assert.equal(avatarPatch.requestBody.required, true);
-    assert.deepEqual(Object.keys(avatarPatch.requestBody.content), ['multipart/form-data']);
+    assert.deepEqual(Object.keys(avatarPatch.requestBody.content).sort(), ['application/json', 'multipart/form-data']);
     const avatarBody = resolveSchema(avatarPatch.requestBody.content['multipart/form-data'].schema);
     assert.equal(avatarBody.additionalProperties, false);
-    assert.deepEqual(avatarBody.required, ['avatar']);
+    assert.deepEqual(avatarBody.required ?? [], []);
+    assert.equal(avatarBody.minProperties, 1);
+    assert.deepEqual(avatarBody.anyOf?.map(schema => schema.required?.[0]).sort(), ['avatar', 'name'], 'Multipart yêu cầu ít nhất một field, không bắt buộc cả hai');
     const avatarFields = propertiesOf(avatarBody);
-    assert.deepEqual(Object.keys(avatarFields), ['avatar']);
+    assert.deepEqual(Object.keys(avatarFields).sort(), ['avatar', 'name']);
+    const multipartName = resolveSchema(avatarFields.name!);
+    assert.equal(multipartName.type, 'string');
+    assert.equal(multipartName['x-minTrimmedCodePoints'], 1);
+    assert.equal(multipartName['x-maxTrimmedCodePoints'], 150);
+    assert.ok(multipartName.nullable !== true && multipartName.maxLength === undefined);
     const avatarFile = resolveSchema(avatarFields.avatar!);
     assert.equal(avatarFile.type, 'string');
     assert.equal(avatarFile.format, 'binary');
@@ -176,9 +186,6 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
     assert.ok(avatarFile.nullable !== true);
     assert.deepEqual(avatarPatch.requestBody.content['multipart/form-data'].encoding.avatar.contentType.split(',').map((mime: string) => mime.trim()).sort(),
       ['image/jpeg', 'image/png', 'image/webp']);
-    const avatarResponse = responseProperties(avatarPath, 'patch');
-    assert.deepEqual(Object.keys(avatarResponse).sort(), ['data', 'message', 'success']);
-    assert.deepEqual(resolveSchema(avatarResponse.message!).enum, ['Cập nhật avatar thành công']);
     assert.equal(spec.paths['/assets/default-avatar.svg'], undefined, 'Ảnh mặc định là asset, không tăng inventory API');
 
     const classOperations = [
@@ -584,7 +591,6 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
       ['/auth/logout', 'POST', undefined, 200],
       ['/auth/me', 'GET', undefined, 401],
       ['/auth/me', 'PATCH', { name: 'Nguyễn Văn An' }, 401],
-      ['/auth/me/avatar', 'PATCH', undefined, 401],
       ['/auth/registrations/pending', 'GET', undefined, 401],
       ['/auth/registrations/1/approve', 'PATCH', undefined, 401],
       ['/classes', 'POST', {}, 401],
@@ -656,7 +662,7 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
     }
     const avatarForm = new FormData();
     avatarForm.append('avatar', new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }), 'avatar.png');
-    const unauthorizedAvatar = await fetch(`${baseUrl}/api/auth/me/avatar`, {
+    const unauthorizedAvatar = await fetch(`${baseUrl}/api/auth/me`, {
       method: 'PATCH', headers: { Origin: env.FRONTEND_ORIGIN }, body: avatarForm,
     });
     assert.equal(unauthorizedAvatar.status, 401, 'Multipart upload phải xác thực trước khi đọc file hoặc gọi Cloudinary');
@@ -668,6 +674,10 @@ test('Swagger UI tải OpenAPI đầy đủ, assets local và giữ auth/CORS/40
     assert.match(defaultAvatar.headers.get('content-type') ?? '', /^image\/svg\+xml\b/i);
     const defaultSvg = await defaultAvatar.text();
     assert.ok(defaultSvg.includes('<svg') && defaultSvg.length > 100);
+    const removedAvatarEndpoint = await fetch(`${baseUrl}/api/auth/me/avatar`, { method: 'PATCH', headers: { Origin: env.FRONTEND_ORIGIN } });
+    assert.equal(removedAvatarEndpoint.status, 404, 'Endpoint avatar riêng đã được gộp và phải trả 404');
+    assert.deepEqual(await removedAvatarEndpoint.json(), { success: false, message: 'Không tìm thấy API' });
+    assert.equal(removedAvatarEndpoint.headers.get('access-control-allow-origin'), env.FRONTEND_ORIGIN);
     for (const path of ['/api/docs/missing-docs-route', '/api/missing-business-route']) {
       const response = await get(path);
       assert.equal(response.status, 404);

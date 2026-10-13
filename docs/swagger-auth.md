@@ -8,11 +8,11 @@ Với backend chạy cổng 5000:
 - Swagger UI: `http://localhost:5000/api/docs/`.
 - OpenAPI JSON: `http://localhost:5000/api/docs/openapi.json`.
 
-Trang tài liệu mô tả toàn bộ **31 API hiện có**, trên **18 path OpenAPI**:
+Trang tài liệu mô tả toàn bộ **30 API hiện có**, trên **17 path OpenAPI**:
 
 | Nhóm | Số API | Hướng dẫn |
 | --- | --- | --- |
-| Auth / AuthAdmin | 9 | [auth-approval.md](auth-approval.md), [user-profile-api.md](user-profile-api.md) |
+| Auth / AuthAdmin | 8 | [auth-approval.md](auth-approval.md), [user-profile-api.md](user-profile-api.md) |
 | Classes | 5 | [class-api.md](class-api.md) |
 | Students | 5 | [student-api.md](student-api.md) |
 | Enrollments | 3 | [enrollment-api.md](enrollment-api.md) |
@@ -55,8 +55,7 @@ file tài liệu.
 | ADMIN duyệt | `PATCH /api/auth/registrations/:id/approve` | Không cần body; ID User là số nguyên, lấy từ danh sách đăng ký |
 | Đăng nhập | `POST /api/auth/login` | Gửi email/password; giữ `data.accessToken` và `data.user` trong trạng thái ứng dụng |
 | Lấy User | `GET /api/auth/me` | Gửi `Authorization: Bearer <accessToken>` |
-| Đổi tên | `PATCH /api/auth/me` | Bearer token; gửi chỉ `name`, cập nhật User từ response |
-| Đổi avatar | `PATCH /api/auth/me/avatar` | Bearer token; multipart/form-data, một file `avatar` JPEG/PNG/WebP ≤ 2 MiB |
+| Đổi tên/ảnh | `PATCH /api/auth/me` | Bearer token; JSON name hoặc multipart name Text/avatar File, ít nhất một field |
 | Làm mới phiên | `POST /api/auth/refresh` | Trình duyệt gửi cookie; cập nhật access token và User từ response |
 | Đăng xuất | `POST /api/auth/logout` | Trình duyệt gửi cookie; xóa access token/User đang giữ trên FE |
 
@@ -66,24 +65,29 @@ Chi tiết nghiệp vụ và giới hạn phiên hiện có ở [auth-approval.m
 
 ### Hồ sơ và type frontend
 
-`data.user` của register/login/refresh/GET `/auth/me`, PATCH `/auth/me` và
-PATCH `/auth/me/avatar` có `id`, `email`, `name`, `avatar`, `role`.
+`data.user` của register/login/refresh/GET `/auth/me` và PATCH `/auth/me`
+có `id`, `email`, `name`, `avatar`, `role`.
 `avatar` luôn là URL ảnh riêng hoặc URL ảnh mặc định chung khi DB null.
 Register vẫn chỉ nhận email/password, tên ban
 đầu lấy từ email. Danh sách đăng ký chờ thêm `status`, `createdAt`; response
 duyệt thêm `status`.
 
-PATCH `/auth/me` chỉ nhận `name`: trim rồi kiểm 1–150 Unicode code points,
-tương đương `Array.from(name.trim()).length`. Field khác trả 400; gửi thành
-công cập nhật User hiển thị từ `data.user`. Không cần refresh phiên riêng
-chỉ để lấy tên mới, vì đổi tên
-không đổi JWT/cookie. Chi tiết ở [user-profile-api.md](user-profile-api.md).
+PATCH `/auth/me` nhận hai kiểu body: JSON chỉ có `name` bắt buộc hoặc
+multipart có `name` dạng Text và tối đa một file `avatar`, mỗi field optional
+nhưng phải có ít nhất một. Tên trim rồi kiểm 1–150 Unicode code points,
+tương đương `Array.from(name.trim()).length`; field không gửi giữ nguyên.
+Thành công trả message `Cập nhật thông tin tài khoản thành công` và User
+hiện tại ở `data.user`. Không cần refresh phiên riêng để lấy hồ sơ mới;
+API không đổi JWT/cookie. Chi tiết ở [user-profile-api.md](user-profile-api.md).
 
-PATCH `/auth/me/avatar` có body `multipart/form-data`: chọn **Try it out**,
-chọn một file trong field `avatar`, rồi Execute với Bearer token. Chấp nhận
+Trong PATCH `/auth/me`, chọn **Try it out** và content type
+`multipart/form-data`, điền name hoặc chọn file trong field avatar rồi
+Execute với Bearer token. Chấp nhận
 JPEG/PNG/WebP tối đa 2 MiB; backend kiểm nội dung ảnh/20 megapixel, xử lý
 WebP 256×256 và upload Cloudinary. Không nhập URL qua JSON hoặc gửi kèm
-field khác. API thiếu cấu hình Cloudinary trả 503; lỗi upload trả 502.
+field khác. Có ảnh thì upload trước rồi ghi tên/ảnh đã gửi trong một lần DB;
+lỗi ảnh/Cloudinary giữ cả hai field đang lưu. Request chỉ tên không cần
+Cloudinary; request có ảnh thiếu cấu hình trả 503, lỗi upload trả 502.
 Trong FE, dùng FormData và để browser tự tạo Content-Type/boundary.
 
 Ảnh chung ở `/api/assets/default-avatar.svg` là asset công khai, không
@@ -137,7 +141,7 @@ JWT còn hạn vẫn theo chính sách hiện tại, nên FE phải bỏ access 
 
 ## Cập nhật tài liệu
 
-- `src/docs/auth.openapi.ts`: mô tả 9 API Auth, public User có name/avatar, PATCH tên và upload multipart.
+- `src/docs/auth.openapi.ts`: mô tả 8 API Auth, public User có name/avatar, một PATCH hồ sơ nhận JSON/multipart.
 - `src/docs/class.openapi.ts`: mô tả 5 API CRUD Class, tiền/ngày và ownership.
 - `src/docs/student.openapi.ts`: mô tả 5 API CRUD Student, trường nullable và ownership.
 - `src/docs/enrollment.openapi.ts`: mô tả 3 API ghi danh/nghỉ lớp, Student lồng nhau và bảo vệ lịch sử.

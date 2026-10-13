@@ -18,19 +18,27 @@ khác với `Class.name` và `Student.fullName`.
   dài hơn giới hạn đó trong lúc backfill hoặc tạo tên ban đầu.
 
 Public User của register, login, refresh, GET `/api/auth/me` và PATCH
-`/api/auth/me` hoặc `/api/auth/me/avatar` gồm đúng `id`, `email`, `name`,
+`/api/auth/me` gồm đúng `id`, `email`, `name`,
 `avatar`, `role`. `avatar` luôn là URL ảnh riêng hoặc ảnh mặc định chung.
 Danh sách đăng ký chờ
 thêm `status`, `createdAt`; response duyệt thêm `status`.
 
 ## PATCH /api/auth/me
 
-Đổi tên của chính tài khoản đã đăng nhập, yêu cầu Bearer access token và
+Đổi tên, avatar hoặc cả hai của chính tài khoản đã đăng nhập, yêu cầu Bearer access token và
 trạng thái ACTIVE. Backend lấy ID từ `res.locals.auth.userId`; không có ID
-trong path, body chỉ có name và query không được dùng để chọn tài khoản.
+trong path và query không được dùng để chọn tài khoản.
 TEACHER và ADMIN dùng cùng cách gọi cho hồ sơ của mình.
 
-### Request
+| Cách gửi | Field được nhận | Yêu cầu |
+| --- | --- | --- |
+| `application/json` | `name` | `name` bắt buộc; body strict, không nhận avatar/URL ảnh |
+| `multipart/form-data` | `name` dạng Text, `avatar` dạng File | Mỗi field optional; phải gửi ít nhất một, tối đa một file |
+
+Field không gửi giữ nguyên. Endpoint avatar riêng đã được gộp; dùng một
+PATCH `/api/auth/me` cho mọi thay đổi hồ sơ.
+
+### JSON: chỉ đổi tên
 
 ```http
 PATCH /api/auth/me
@@ -44,7 +52,7 @@ Content-Type: application/json
 }
 ```
 
-Body strict, chỉ có một field bắt buộc `name`:
+Với JSON, body strict và chỉ có một field bắt buộc `name`:
 
 | Điều kiện | Kết quả |
 | --- | --- |
@@ -62,7 +70,7 @@ thành một ký tự. Tên không có yêu cầu unique.
 ```json
 {
   "success": true,
-  "message": "Cập nhật tên thành công",
+  "message": "Cập nhật thông tin tài khoản thành công",
   "data": {
     "user": {
       "id": 42,
@@ -95,13 +103,14 @@ cách xử lý chung hiện có.
 
 ## Cập nhật frontend
 
-1. Tải contract mới từ `/api/docs/openapi.json`; Swagger có 9 API Auth và
-   tổng 31 operation trên 18 path. PATCH tên dùng lại path `/auth/me` của GET;
-   PATCH avatar dùng path `/auth/me/avatar`.
+1. Tải contract mới từ `/api/docs/openapi.json`; Swagger có 8 API Auth và
+   tổng 30 operation trên 17 path. PATCH `/auth/me` dùng lại path của GET,
+   với cả JSON và multipart trong requestBody.
 2. Trong project frontend `class-manage`, chạy `npm run api:generate` để sinh
    lại `types/generated/api.ts`; giữ file generated là output của generator.
-3. Gửi `{ name }` qua service dùng API client hiện có. Thành công thì cập
-   nhật state/cache hồ sơ từ `data.user`, hoặc đọc lại GET `/api/auth/me`.
+3. Chỉ tên: gửi JSON `{ name }`. Có ảnh: gửi FormData `avatar` và tùy chọn
+   `name` qua cùng service/API client hiện có. Thành công cập nhật state/cache
+   từ `data.user`, hoặc đọc lại GET `/api/auth/me`.
 4. Login/refresh cũng trả User có name; cập nhật cả token và User khi refresh
    thành công. Không cần tạo refresh request riêng sau PATCH tên.
 
@@ -151,8 +160,8 @@ Chưa chạy lại toàn bộ bộ test module; chi tiết và giới hạn type
 
 Ở cuối bước database này, public User vẫn chỉ có `id`, `email`, `name`,
 `role`; contract còn 30 operation trên 17 path. Bước upload dưới đây mới
-bổ sung `avatar` vào response và thêm một API. PATCH `/api/auth/me` tiếp
-tục chỉ nhận name.
+bổ sung `avatar` vào response. Contract hiện tại đã gộp upload và tên vào
+PATCH `/api/auth/me`; kết quả từng bước trước vẫn được giữ riêng.
 
 Kết quả kiểm tra bước schema avatar được ghi riêng trong
 `docs/backend-status-report.md`, không dùng kết quả name để xác nhận upload.
@@ -167,25 +176,27 @@ chưa được triển khai/kiểm tra ở bước database này.
   `avatar`, không lưu URL mặc định vào từng hàng User.
 - Asset mặc định được phục vụ công khai tại
   `GET /api/assets/default-avatar.svg`; đây là file ảnh, không phải API
-  nghiệp vụ được tính vào 31 operation Swagger.
+  nghiệp vụ được tính vào 30 operation Swagger.
 - Có thể đặt `PUBLIC_API_ORIGIN` thành origin công khai của backend để tạo
   URL asset tuyệt đối, ví dụ `https://api.example.com`. `DEFAULT_AVATAR_URL`
   dùng để chọn URL ảnh mặc định khác khi cần. Ở local, backend dùng origin
   localhost theo `PORT` khi chưa đặt origin riêng. Production phải có
   `PUBLIC_API_ORIGIN` hoặc `DEFAULT_AVATAR_URL`; dùng URL HTTP/HTTPS,
   `PUBLIC_API_ORIGIN` chỉ chứa origin, không thêm path/query/fragment.
-- Register/login/refresh/GET me/PATCH tên/PATCH avatar trả cùng public User
+- Register/login/refresh/GET me/PATCH hồ sơ trả cùng public User
   5 field. Danh sách chờ và duyệt vẫn giữ các field quản trị bổ sung đã có.
 
-### PATCH /api/auth/me/avatar
+### Multipart: đổi tên, avatar hoặc cả hai
 
-Upload một ảnh cho chính tài khoản ACTIVE đang đăng nhập. Backend lấy ID
-từ `res.locals.auth.userId`; TEACHER và ADMIN đều chỉ đổi ảnh của mình.
+Gửi tới cùng `PATCH /api/auth/me`. Backend lấy ID từ
+`res.locals.auth.userId`; TEACHER và ADMIN đều chỉ sửa hồ sơ của mình.
 
 | Request | Quy tắc |
 | --- | --- |
 | Content-Type | `multipart/form-data`, client tự thêm boundary |
-| Field | Một file bắt buộc tên `avatar`, không có field/file khác |
+| Field tên | `name` dạng Text, optional; nếu gửi phải trim còn 1–150 Unicode code points |
+| Field ảnh | `avatar` dạng File, optional; tối đa một file, không nhận URL/Text |
+| Ít nhất một field | Gửi name, avatar hoặc cả hai; không gửi cả hai trả 400 |
 | Loại ảnh | JPEG (`image/jpeg`), PNG (`image/png`) hoặc WebP (`image/webp`) |
 | Kích thước file | Tối đa 2 MiB = 2.097.152 byte |
 | Ảnh giải mã | Tối đa 20 megapixel; backend xác nhận định dạng thật khớp MIME |
@@ -193,16 +204,21 @@ từ `res.locals.auth.userId`; TEACHER và ADMIN đều chỉ đổi ảnh của
 Backend giải mã ảnh bằng Sharp, xử lý thành ảnh WebP kích thước 256×256
 rồi upload qua Cloudinary. Ảnh được xoay theo EXIF orientation, crop `cover`,
 chất lượng WebP 80 và bỏ metadata. PNG/WebP động dùng frame đầu, kết quả
-là ảnh tĩnh. Database lưu URL ảnh mới sau khi upload thành
-công. API không nhận URL ảnh qua JSON hoặc text field; PATCH tên vẫn
-chỉ nhận `name` như trên.
+là ảnh tĩnh. API không nhận URL ảnh qua JSON hoặc text field.
+
+Chỉ có tên thì không cần Cloudinary. Khi có ảnh, backend upload trước rồi
+lưu URL ảnh cùng tên đã gửi trong **một lần cập nhật DB**. File/validation,
+Cloudinary lỗi 502 hoặc thiếu cấu hình 503 không làm đổi tên hay ảnh đang
+lưu. Nếu bỏ qua name hoặc avatar thì field đó giữ nguyên; muốn đổi tên
+cùng ảnh, gửi cả hai trong cùng FormData.
 
 #### Thử bằng Postman
 
-1. Chọn `PATCH http://localhost:5000/api/auth/me/avatar`.
+1. Chọn `PATCH http://localhost:5000/api/auth/me`.
 2. Authorization → Bearer Token: dùng access token của tài khoản ACTIVE.
-3. Body → **form-data**. Thêm key `avatar`, đổi kiểu bên cạnh key từ
-   **Text** sang **File**, rồi chọn ảnh JPEG/PNG/WebP hợp lệ.
+3. Body → **form-data**. Có thể thêm key `name` kiểu **Text**, key `avatar`
+   kiểu **File** rồi chọn ảnh JPEG/PNG/WebP hợp lệ. Gửi ít nhất một field;
+   bỏ key không muốn thay đổi, không gửi field rỗng để giữ nguyên.
 4. Xóa header `Content-Type: application/json` đã đặt thủ công nếu có.
    Để Postman tự tạo `multipart/form-data` kèm boundary, rồi Send.
 5. Lấy URL từ `data.user.avatar`, hoặc gọi GET `/api/auth/me` để đọc lại.
@@ -212,7 +228,7 @@ Thành công trả 200:
 ```json
 {
   "success": true,
-  "message": "Cập nhật avatar thành công",
+  "message": "Cập nhật thông tin tài khoản thành công",
   "data": {
     "user": {
       "id": 42,
@@ -229,31 +245,37 @@ URL trong ví dụ chỉ minh họa; response thật dùng URL ảnh vừa uploa
 Upload không cấp access token hoặc refresh cookie mới. FE cập nhật hồ sơ
 từ toàn bộ `data.user`; phiên đăng nhập hiện có tiếp tục dùng được.
 
-#### Mã lỗi upload
+#### Mã lỗi cập nhật hồ sơ
 
-Các lỗi dùng `{ "success": false, "message": "..." }`, không trả
-credentials hoặc lỗi thô từ Cloudinary:
+Lỗi nghiệp vụ/parser dùng `{ "success": false, "message": "..." }`.
+Lỗi validation còn có `errors: [{field, message}]`; không trả credentials
+hoặc lỗi thô từ Cloudinary:
 
 | HTTP | Message/phạm vi |
 | --- | --- |
-| 400 | `Vui lòng gửi một file avatar`: thiếu file hoặc file rỗng |
-| 400 | `Dữ liệu upload avatar không hợp lệ`: multipart/boundary sai |
-| 400 | `Chỉ gửi một file trong field avatar`: field/file thêm hoặc sai tên |
+| 400 | `Thông tin tài khoản không hợp lệ`: name/body sai, JSON thiếu name hoặc multipart thiếu cả hai field; có errors |
+| 400 | `Vui lòng gửi một file avatar`: file được gửi nhưng rỗng |
+| 400 | `Dữ liệu cập nhật tài khoản không hợp lệ`: multipart/boundary sai |
+| 400 | `Chỉ gửi field name và một file avatar`: field/file thêm, avatar Text hoặc sai tên |
 | 400 | `File ảnh không hợp lệ`: không giải mã được hoặc ảnh vượt giới hạn pixels |
 | 400 | `Nội dung file không khớp định dạng ảnh`: ảnh thật khác MIME gửi lên |
 | 401 | Theo auth; gồm `Tài khoản không còn tồn tại` nếu tài khoản mất trong lúc xử lý |
 | 403 | `Tài khoản đang chờ duyệt` |
 | 409 | `Avatar đã thay đổi, vui lòng tải lại và thử lại`: snapshot ảnh đổi trong lúc upload/ghi |
 | 413 | `Ảnh không được vượt quá 2 MiB` |
-| 415 | `Upload avatar phải dùng multipart/form-data` hoặc `Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP` |
-| 500 | `Không thể lưu avatar`: lỗi lưu/đối soát database; đọc GET me để xác nhận ảnh hiện tại |
+| 415 | `Cập nhật tài khoản phải dùng application/json hoặc multipart/form-data` hoặc `Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP` |
+| 500 | `Không thể lưu thông tin tài khoản`: lỗi lưu/đối soát database; đọc GET me để xác nhận thông tin hiện tại |
 | 502 | `Không thể upload avatar, vui lòng thử lại`: lỗi upload Cloudinary |
-| 503 | `Dịch vụ avatar chưa được cấu hình`: thiếu cấu hình Cloudinary |
+| 503 | `Dịch vụ avatar chưa được cấu hình`: request có ảnh và thiếu cấu hình Cloudinary; chỉ tên không cần cấu hình |
 
 Lỗi JSON parser chung vẫn có thể trả 400/413/415 trước middleware auth.
 Backend kiểm lại tài khoản và snapshot ảnh khi ghi; xung đột trả 409 để
 FE tải lại hồ sơ rồi gửi lại. API không có version/precondition từ client
 để phát hiện một hồ sơ đã cũ từ lần tải trước.
+
+Cập nhật chỉ tên đồng thời với cập nhật chỉ ảnh không xung đột theo snapshot
+avatar. Request có cả hai field sẽ ghi cả hai giá trị đã gửi; request khác
+vẫn có thể đổi tên tiếp sau đó. Response dùng hồ sơ backend xác nhận được.
 
 Sau khi xác thực và kiểm multipart/MIME/kích thước, service kiểm cấu hình
 Cloudinary trước khi giải mã ảnh. Thiếu cấu hình sẽ trả 503 ở bước này.
@@ -266,9 +288,10 @@ candidate để tránh xóa ảnh có thể đã được dùng; FE đọc lại
 
 ```typescript
 const formData = new FormData();
-formData.append('avatar', file);
+if (name !== undefined) formData.append('name', name);
+if (file) formData.append('avatar', file);
 
-const response = await fetch(`${apiBaseUrl}/auth/me/avatar`, {
+const response = await fetch(`${apiBaseUrl}/auth/me`, {
   method: 'PATCH',
   headers: { Authorization: `Bearer ${accessToken}` },
   body: formData,
